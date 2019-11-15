@@ -123,4 +123,89 @@ METHOD if_ujr_wb_pre_process~pre_process.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
+  
+METHOD IF_UJR_WB_PRE_PROCESS~PRE_PROCESS.
+
+DATA: ls_account TYPE ujr_s_dim_handler
+, lo_account TYPE REF TO if_uja_dim_data " Object Reference to Dimension
+, lt_attr_list TYPE uja_t_attr " Attributes Infos
+, ls_attr_list TYPE uja_s_attr
+, lt_attr_name TYPE uja_t_attr_name " Attributes name list
+, ls_message TYPE UJ0_S_MESSAGE
+, lr_data TYPE REF TO data
+, log_msg TYPE string
+, s_round TYPE string
+.
+
+FIELD-SYMBOLS: <ls_dim_obj> TYPE ujr_s_dim_handler
+, <ls_record> TYPE ANY
+, <l_account> TYPE uj_dim_member " Entity member of current records
+, <lt_account_mbr> TYPE HASHED TABLE " All entity members
+, <ls_account_mbr> TYPE ANY
+, <lf_rounding> TYPE ANY " Round to X decimal places
+, <l_keyfigure> TYPE ANY " Keyfigure
+.
+
+LOOP AT it_dim_obj ASSIGNING <ls_dim_obj> WHERE dim_type = uj00_cs_dim_type-account.
+lo_account ?= <ls_dim_obj>-dim_obj.
+ls_account = <ls_dim_obj>.
+ENDLOOP.
+
+" Get necessary attributes
+
+lo_account->get_attr_list( IMPORTING et_attr_list = lt_attr_list ).
+
+LOOP AT lt_attr_list INTO ls_attr_list
+WHERE attribute_name = 'ROUNDING'.
+
+APPEND ls_attr_list-attribute_name TO lt_attr_name.
+
+ENDLOOP.
+
+" Get Members
+
+CALL METHOD lo_account->read_mbr_data
+
+EXPORTING
+if_ret_hashtab = abap_true
+it_attr_list = lt_attr_name " columns:attributes name list
+IMPORTING
+er_data = lr_data.
+
+ASSIGN lr_data->* TO <lt_account_mbr>.
+
+" Preparation: create data structure and assign fields
+
+CREATE DATA lr_data LIKE LINE OF ct_array.
+
+ASSIGN lr_data->* TO <ls_record>.
+
+LOOP AT ct_array ASSIGNING <ls_record>.
+ASSIGN COMPONENT ls_account-dimension OF STRUCTURE <ls_record> TO <l_account>.
+IF sy-subrc = 0.
+READ TABLE <lt_account_mbr> WITH TABLE KEY (ujr0_c_member_id) = <l_account> ASSIGNING <ls_account_mbr>.
+CHECK sy-subrc = 0.
+
+" Round keyfigure based on the ROUNDING property of account.
+
+ASSIGN COMPONENT ujr0_c_keyfigure OF STRUCTURE <ls_record> TO <l_keyfigure>.
+ASSIGN COMPONENT 'ROUNDING' OF STRUCTURE <ls_account_mbr> TO <lf_rounding>.
+IF sy-subrc = 0.
+MOVE <lf_rounding> TO s_round.
+CONDENSE s_round NO-GAPS.
+
+IF s_round CO '0123456789' AND s_round IS NOT INITIAL.
+
+<l_keyfigure> = round( val = <l_keyfigure> dec = s_round mode = 2 ). "ROUND_HALF_UP
+
+ENDIF.
+ENDIF.
+
+ELSE.
+cl_ujk_logger=>log( 'INVALID DIMENSION!' ).
+ENDIF.
+
+ENDLOOP.
+
+ENDMETHOD.  
 ENDCLASS.
