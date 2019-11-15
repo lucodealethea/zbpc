@@ -1,0 +1,84 @@
+// =======================================================================================================================================================
+// NAME: CUST_BADI_SGA_ALLOC.lgf
+//
+// CALL: Parameters can be hard coded in Script Logic instead of dynamic call via Data Manager Package
+//
+// DIMPROP: Properties used: OBS.ALLOC_RULE
+//
+// DESC: This script relies on Allocation Rules (derived from PL_YTD_VARIABLES ) + other parameters except TIME (still via DM) are hardcoded
+// DYNAMIC SCRIPT VIA DM : CUST_BADI_ALLOC_SGA.lgf
+//// REVISIONS: BB5827 - Luco
+// July 7th 2019 - Added $FA_ND_DEFINES_SMART$
+// October 25th - Added %__SELECTION% variables
+//
+// ========================================================================================================================================================
+// retrieve OBS members to be allocated - property ALLOC_RULE is used for OBS base for which the parent member is specified
+// main rule to maintain the allocation framework
+// the property ALLOC_RULE on OBS dimension:
+// make sure that all postable base members (since BPC doesn't handle postable nodes) are created
+// and have the higher level node defined in ALLOC_RULE property 
+// eg. parentmember "59_ENG" SGA's allocation should be posted on "59_S.I"
+// we capture the OBS nodes for SGA's allocation in next include via *SELECT into %OBS_2_ALLOCATE% WHERE ALLOC_RULE is not null
+
+*INCLUDE OBS_MBRS_VARIABLES.lgf
+
+*XDIM_MEMBERSET OBS = %OBS_2_ALLOCATE%
+*XDIM_MEMBERSET FUNCTIONAL_AREA = BAS(%FUNCTIONAL_AREA_SET%)
+
+*XDIM_MEMBERSET FUNCTIONAL_AREA AS %FA_SELECT%=BAS(%FUNCTIONAL_AREA_SET%)
+
+*XDIM_MEMBERSET TIME = %TIME_SET%
+*XDIM_MEMBERSET CURRENCY = %CURRENCY_SET%
+*XDIM_MEMBERSET VERSION = %VERSION_SET%
+*XDIM_MEMBERSET N_ACCOUNT = %N_ACCOUNT_SET%
+*XDIM_MEMBERSET BU_LINE = %BU_LINE_SET%
+*XDIM_MEMBERSET FIGURES = %FIGURES_SET%
+*XDIM_MEMBERSET PRODUCT = %PRODUCT_SET%
+*XDIM_MEMBERSET DATASRC = %DATASRC_SET%
+*XDIM_MEMBERSET SMART = %SMART_SET%
+
+*START_BADI ALLOC_SGA
+QUERY = ON 
+WRITE = ON
+DEBUG = OFF
+FA_BASE=$FA_BASE$
+FA_NODE_DEFINES_SMART=$FA_NODE_DEFINES_SMART$
+O_SMART=$O_SMART$
+S_SMART=$S_SMART$
+VERSION_T=$VERSION_T$
+PRODUCT_T=$PRODUCT_T$
+PARTNER_T=$PARTNER_T$
+FIGURES_T=$FIGURES_T$
+N_ACCOUNT_T=$N_ACCOUNT_T$
+DATASRC_T=$DATASRC_T$
+BU_LINE_T=$BU_LINE_T$
+BASEALLOC=$BASEALLOC$
+FA_SELECT=%FA_SELECT%
+TIMESELECTION=%TIME_SET%
+OBS_FOR_INPUT= %OBS_FOR_INPUT%
+OBS_2_ALLOCATE=%OBS_2_ALLOCATE%
+//EXCL_OTHALLOC=Y to exclude other than B9500, 95000, TP_9999, TE99 etc from deduction
+EXCL_OTHALLOC=Y
+TOP_OBS_NODE=STE01
+TOP_FA_NODE=F0000U
+*END_BADI
+
+
+// =======================================================================================================================================================
+// NAME: OBS_MBRS_VARIABLES.lgf
+//
+// CALL: Parameters passed to logic via Data Manager Package
+//
+// DIMPROP: Properties used:
+//
+// DESC: This script contains only SELECT statements to fill variable values that are used in the other scripts.
+//
+//// REVISIONS:
+// July 7th 2019 - Added variables %OBS_2_ALLOCATE%
+//
+// ========================================================================================================================================================
+//retrieve OBS members to be allocated - property ALLOC_RULE is used for OBS base for which the parent member is specified
+//*SELECT(%OBS_2_ALLOCATE%,"ALLOC_RULE",OBS,"[ALLOC_RULE]<>''")
+// limiting scope for debugging > *SELECT(%OBS_2_ALLOCATE%,"ALLOC_RULE",OBS,"[ALLOC_RULE]<>'' AND [COMP_CODE]='TH59'")
+*SELECT(%OBS_2_ALLOCATE%,"ALLOC_RULE",OBS,"[ALLOC_RULE]<>''")
+*SELECT(%OBS_FOR_INPUT%,"ID",OBS,"[ALLOC_RULE]<>''")
