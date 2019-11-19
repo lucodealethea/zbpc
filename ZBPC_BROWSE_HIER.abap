@@ -880,7 +880,7 @@ ASSIGN gdo_deschandle->* TO <fs_descdata>.
 * get the descriptions
 SELECT * FROM (wax_dim_info-desc_table)
 INTO CORRESPONDING FIELDS OF TABLE <fs_descdata>
-WHERE langu = sy-langu AND objvers = 'A'.
+WHERE langu = sy-langu  AND ( objvers = 'A' OR objvers = 'M' ).
 * update the texts
   LOOP AT f_nodeslist ASSIGNING <f_nodesline>.
     ASSIGN COMPONENT: 'TXTLG' OF STRUCTURE <fs_descstruct> TO <l_text>.
