@@ -1,0 +1,8 @@
+isql -SNPL -Usapsa -X
+use master
+go
+disk init name = 'NPL_data_002', physname=                       
+'/sybase/NPL/sapdata_1/NPL_data_002.dat',skip_alloc = true, size = '20480M'
+go
+
+check in dbacockpit section devices for new space
