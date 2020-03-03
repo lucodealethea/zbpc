@@ -18,10 +18,10 @@ and TX.langu = 'E'
 left outer join dd07v as VD on D.dim_type = VD.domvalue_l and VD.domname='UJ_DIM_TYPE' and VD.ddlanguage = 'E'
 inner join uja_appl as MD on MD.mandt = DA.mandt and MD.appset_id = DA.appset_id and DA.application_id = MD.application_id                                                                                           
      {                                                                                               
-    key substring(D.tech_name,7,12) as technical_name,     
-    key D.tech_name,                            
     key D.appset_id,                                                                                     
     key DA.application_id,
+        key substring(D.tech_name,7,12) as technical_name,    
+        key D.tech_name,   
     MD.application_type,
     case 
     when MD.application_type = '1' then 'Generic'
