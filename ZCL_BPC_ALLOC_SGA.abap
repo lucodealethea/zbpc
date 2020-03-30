@@ -88,17 +88,6 @@ END OF ty_nacc.
 
 TYPES: tty_nacc TYPE STANDARD TABLE OF ty_nacc.
 
-* beware that in case of changes in model - BPC creates another /1CPMB/BIJDP3S6 table
-TYPES:
-ty_obs_mdata TYPE /1cpmb/bijdp3s6.
-
-*TYPES:
-*ty_fa_rg TYPE rsrange,
-*tty_fa_rg TYPE STANDARD TABLE OF rsrange.
-
-TYPES:
-tty_obs_mdata TYPE STANDARD TABLE OF ty_obs_mdata.
-
 TYPES: BEGIN OF ty_dist_obs,
 obs TYPE uj_dim_member,
 parent_lv1 TYPE uj_dim_member,
@@ -247,8 +236,8 @@ DATA: lt_dist_obs TYPE tty_dist_obs,
       lt_dist_obs_fa TYPE tty_dist_obs_fa.
 
 DATA:
-      ls_obs_mdata TYPE ty_obs_mdata,
-      lt_obs_mdata TYPE tty_obs_mdata,
+*      ls_obs_mdata TYPE ty_obs_mdata,
+*      lt_obs_mdata TYPE tty_obs_mdata,
       lt_obs TYPE tty_obs.
 
 DATA: wa_param_appl_t    TYPE ujk_s_script_logic_hashentry,
@@ -289,6 +278,7 @@ DATA: wa_param_appl_t    TYPE ujk_s_script_logic_hashentry,
       wa_param_obs_for_basealloc TYPE ujk_s_script_logic_hashentry,
       wa_param_obs_for_fa_base TYPE ujk_s_script_logic_hashentry,
       wa_param_fa_selection TYPE ujk_s_script_logic_hashentry,
+      wa_param_check_i TYPE ujk_s_script_logic_hashentry,
       wa_param_partner TYPE ujk_s_script_logic_hashentry,
 *     p_partn TYPE uj_dim_member,
 *      p_time TYPE uj_dim_member,
@@ -298,6 +288,7 @@ DATA: wa_param_appl_t    TYPE ujk_s_script_logic_hashentry,
 DATA: lt_split_obs_2_allocate  TYPE TABLE OF uj_dim_member,
       lt_split_obs_for_input   TYPE tty_obs,
       ls_split_obs_for_input   TYPE ty_obs,
+      base_obs_found TYPE uj_dim_member,
       ls_split_obs_2_allocate  TYPE uj_dim_member,
       ls_split_timeselection TYPE uj_dim_member,
       lt_split_timeselection   TYPE TABLE OF uj_dim_member,
@@ -375,11 +366,11 @@ FIELD-SYMBOLS: <lt_obs> TYPE STANDARD TABLE,
                <ls_fa_mbr_node> TYPE uja_s_mbr_node.
 
 TYPES: BEGIN OF split_obs_type,
-  obs TYPE /b28/oiijdp3s6, "/CPMB/IJDP3S6
+  obs TYPE uj_dim_member, "/CPMB/IJDP3S6
 END OF split_obs_type.
 
 TYPES: BEGIN OF split_fa_type,
-  fa TYPE /b28/oiijdo575, "/CPMB/IJDO575
+  fa TYPE uj_dim_member, "/CPMB/IJDO575
 END OF split_fa_type.
 
 TYPES: BEGIN OF ty_obs_hstruc.
@@ -402,8 +393,8 @@ DATA:
       do_s_obs TYPE rsndi_s_htabstr,
       do_t_obs TYPE HASHED TABLE OF rsndi_s_htabstr WITH UNIQUE KEY hieid objvers nodeid iobjnm nodename.
 
-DATA: l_t_obs TYPE TABLE OF /b28/oiijdp3s6,
-      l_s_obs TYPE /b28/oiijdp3s6,
+DATA: l_t_obs TYPE TABLE OF uj_dim_member,
+      l_s_obs TYPE uj_dim_member,
       lo_obsstruct TYPE REF TO cl_abap_structdescr,
       lo_fastruct TYPE REF TO cl_abap_structdescr,
       gdo_obsdata TYPE REF TO data,
@@ -495,12 +486,12 @@ FIELD-SYMBOLS: <lt_inp_ytd_result> TYPE STANDARD TABLE,
                <lt_inp_mth_result_bup> TYPE STANDARD TABLE,
                <ls_inp_ytd_result>        TYPE any,
                <ls_inp_ytd_result_bup>        TYPE any,
-               <ls_inp_mth_result_bup> TYPE ANY,
+               <ls_inp_mth_result_bup> TYPE any,
                <ls_query_ytd>      TYPE any,
                <ls_cv> TYPE ujk_s_cv,
                <ls_dim_list> TYPE uj_dim_name,
                <ls_axis> TYPE ujo_t_members,
-               <ls_axis_time> type z_ujo_t_members.
+               <ls_axis_time> TYPE z_ujo_t_members.
 FIELD-SYMBOLS:
                <lht_data> TYPE HASHED TABLE ,
                <ls_key> TYPE any,
@@ -579,7 +570,6 @@ ENDLOOP.
   res_param-hashkey = 'O_SMART'. APPEND res_param TO req_params.
   res_param-hashkey = 'S_SMART'. APPEND res_param TO req_params.
   res_param-hashkey = 'VERSION_T'. APPEND res_param TO req_params.
-  res_param-hashkey = 'EXCL_OTHALLOC'. APPEND res_param TO req_params.
   res_param-hashkey = 'TOP_OBS_NODE'. APPEND res_param TO req_params.
   res_param-hashkey = 'TOP_FA_NODE'. APPEND res_param TO req_params.
   res_param-hashkey = 'PRODUCT_T'. APPEND res_param TO req_params.
@@ -594,6 +584,7 @@ ENDLOOP.
   res_param-hashkey = 'BASEALLOC'. APPEND res_param TO req_params.
   res_param-hashkey = 'FA_BASE'. APPEND res_param TO req_params.
   res_param-hashkey = 'FA_SELECT'. APPEND res_param TO req_params.
+  res_param-hashkey = 'CHECK_I'. APPEND res_param TO req_params.
 
 CLEAR:   res_param.
 LOOP AT req_params INTO res_param.
@@ -614,21 +605,10 @@ READ TABLE it_param WITH TABLE KEY hashkey = 'FA_NODE_DEFINES_SMART' INTO wa_par
 READ TABLE it_param WITH TABLE KEY hashkey = 'O_SMART' INTO wa_param_smart_o.
 READ TABLE it_param WITH TABLE KEY hashkey = 'S_SMART' INTO wa_param_smart_s.
 READ TABLE it_param WITH TABLE KEY hashkey = 'VERSION_T' INTO wa_param_version.
-READ TABLE it_param WITH TABLE KEY hashkey = 'EXCL_OTHALLOC' INTO wa_param_excloth.
 READ TABLE it_param WITH TABLE KEY hashkey = 'TOP_OBS_NODE' INTO wa_param_obs_top_node.
 READ TABLE it_param WITH TABLE KEY hashkey = 'TOP_FA_NODE' INTO wa_param_fa_top_node.
 READ TABLE it_param WITH TABLE KEY hashkey = 'QUERY' INTO wa_param_query.
 
-CASE wa_param_excloth-hashvalue.
-WHEN 'X' OR 'Y'.
-MOVE: 'Y' TO wa_param_excloth-hashvalue.
-WHEN 'N'.
-WHEN OTHERS.
-CONCATENATE 'Wrong value for parameter EXCL_OTHALLOC: ' wa_param_excloth-hashvalue 'in SGA - CUST_BADI_SGA_ALLOC.LGF script' INTO ld_log SEPARATED BY space.
-cl_ujk_logger=>log( i_object = ld_log ).
-RAISE EXCEPTION TYPE cx_uj_custom_logic.
-EXIT.
-ENDCASE.
 
 MOVE: wa_param_obs_top_node-hashvalue TO p_obs_topnode,
       wa_param_fa_top_node-hashvalue TO p_fa_topnode,
@@ -652,6 +632,7 @@ ENDIF.
 READ TABLE it_param WITH TABLE KEY hashkey = 'BASEALLOC' INTO wa_param_obs_for_basealloc.
 READ TABLE it_param WITH TABLE KEY hashkey = 'FA_BASE' INTO wa_param_obs_for_fa_base.
 READ TABLE it_param WITH TABLE KEY hashkey = 'FA_SELECT' INTO wa_param_fa_selection.
+READ TABLE it_param WITH TABLE KEY hashkey = 'CHECK_I' INTO wa_param_check_i.
 
 REFRESH: lt_split_obs_2_allocate, lt_split_obs_for_input.
 SPLIT wa_param_obs_2_allocate-hashvalue AT c_sep INTO TABLE lt_split_obs_2_allocate.
@@ -770,83 +751,83 @@ ELSE.
  ls_obscomp-name = 'PARENT_LV9'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
  ls_facomp-name = 'PARENT_LV9'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
- ADD 1 to l_lines_f.
+ ADD 1 TO l_lines_f.
 
  ls_obscomp-name = 'PARENT_LV8'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
  ls_facomp-name = 'PARENT_LV8'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
- ADD 1 to l_lines_f.
+ ADD 1 TO l_lines_f.
 
  ls_obscomp-name = 'PARENT_LV7'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
  ls_facomp-name = 'PARENT_LV7'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
- ADD 1 to l_lines_f.
+ ADD 1 TO l_lines_f.
 
  ls_obscomp-name = 'PARENT_LV6'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
  ls_facomp-name = 'PARENT_LV6'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
- ADD 1 to l_lines_f.
+ ADD 1 TO l_lines_f.
 
  ls_obscomp-name = 'PARENT_LV5'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
   ls_facomp-name = 'PARENT_LV5'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
-  ADD 1 to l_lines_f.
+  ADD 1 TO l_lines_f.
 
  ls_obscomp-name = 'PARENT_LV4'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
  ls_facomp-name = 'PARENT_LV4'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
- ADD 1 to l_lines_f.
+ ADD 1 TO l_lines_f.
 
  ls_obscomp-name = 'PARENT_LV3'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
  ls_facomp-name = 'PARENT_LV3'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
- ADD 1 to l_lines_f.
+ ADD 1 TO l_lines_f.
 
  ls_obscomp-name = 'PARENT_LV2'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
  ls_facomp-name = 'PARENT_LV2'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
- ADD 1 to l_lines_f.
+ ADD 1 TO l_lines_f.
 
  ls_obscomp-name = 'PARENT_LV1'.
  ls_obscomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_obscomp INTO lt_obscomp INDEX l_lines_o.
- ADD 1 to l_lines_o.
+ ADD 1 TO l_lines_o.
  ls_facomp-name = 'PARENT_LV1'.
  ls_facomp-type = cl_abap_elemdescr=>get_string( ).
  INSERT ls_facomp INTO lt_facomp INDEX l_lines_f.
- ADD 1 to l_lines_f.
+ ADD 1 TO l_lines_f.
 ENDIF.
 
 ref_obj_obsstruc = cl_abap_structdescr=>get( p_components = lt_obscomp p_strict = ' ' ). "CALL METHOD cl_abap_structdescr=>create
@@ -872,7 +853,7 @@ ASSIGN gdo_fahandle->* TO <fs_fadata>.
 
 REFRESH: lt_sel, lt_hier_name.
 CLEAR: ls_sel, ls_hier_name.
-
+*BREAK BB5827.
 * get the hierarchies for OBS and FUNCTIONAL_AREA, and other dimension
 
 IF p_obs_topnode IS NOT INITIAL AND
@@ -1190,176 +1171,6 @@ ELSE.
   SUBTRACT: 1 FROM cmth_im, 0 FROM cmth_iy.
 CONCATENATE cmth_iy '_' cmth_im INTO previous_month.
 ENDIF.
-* other allocations than B9500, 95000, TE99, TP_9999...are also included
-* if we use parent nodes like here below
-if wa_param_excloth-hashvalue = 'N'.
-
-* we need only last month of time selection - or previous_month
-* SQE only requires one month selected when measures = YTD
-* if YTD including months ahead required, insert YYYY_TOTAL instead
-
-    LOOP AT lt_cv ASSIGNING <ls_cv>.
-      l_dimname = <ls_cv>-dimension.
-      APPEND l_dimname TO lt_dim_list.
-     IF l_dimname <> 'OBS' AND l_dimname <> 'TIME'.
-      LOOP AT <ls_cv>-member INTO l_member.
-        IF l_member <> wa_param_obs_for_basealloc-hashvalue.
-        ls_member-dimension = l_dimname.
-        ls_member-member = l_member.
-        ls_member-memberset_formula-type = cl_ujo_query_memberset=>gc_baselevel."useless SQE ignpores it
-        INSERT ls_member INTO TABLE ls_axis.
-        ENDIF.
-      ENDLOOP.
-      INSERT ls_axis INTO TABLE lt_axis.
-      CLEAR ls_axis.
-     ELSEIF  l_dimname = 'OBS'.
-       LOOP AT lt_split_obs_for_input INTO ls_split_obs_for_input.
-        ls_member-dimension = 'OBS'.
-        ls_member-member = ls_split_obs_for_input-obs.
-        INSERT ls_member INTO TABLE ls_axis.
-       ENDLOOP.
-      INSERT ls_axis INTO TABLE lt_axis.
-      CLEAR ls_axis.
-     ELSEIF  l_dimname = 'TIME'.
-       ls_member-dimension = l_dimname.
-*        CONCATENATE current_month(4) '_' 'TOTAL' INTO l_member.
-*        ls_member-member = l_member.
-         ls_member-member = previous_month. "or current_month
-        INSERT ls_member INTO TABLE ls_axis.
-        INSERT ls_axis INTO TABLE lt_axis.
-        CLEAR ls_axis.
-     ENDIF.
-    ENDLOOP.
-
-* MEASURES inserted in list of dimensions according to ct_data sequence of fields
-INSERT 'MEASURES' INTO lt_dim_list INDEX loop_tabix.
-
-REFRESH:ls_axis.
-ls_member-dimension = 'MEASURES'.
-ls_member-member = 'YTD'.
-INSERT ls_member INTO TABLE ls_axis.
-INSERT ls_axis INTO TABLE lt_axis.
-
-* get position for MEASURES and TIME in lt_axis to update predicates
-CLEAR: loop_tabix, time_tabix, measures_tabix.
-LOOP AT lt_axis ASSIGNING  <ls_axis>.
-loop_tabix = sy-tabix.
-READ TABLE <ls_axis> TRANSPORTING NO FIELDS WITH KEY dimension = 'TIME' BINARY SEARCH.
-IF sy-subrc = 0.
-  time_tabix = loop_tabix.
-ENDIF.
-READ TABLE <ls_axis> TRANSPORTING NO FIELDS WITH KEY dimension = 'MEASURES' BINARY SEARCH.
-IF sy-subrc = 0.
-  measures_tabix = loop_tabix.
-ENDIF.
-ENDLOOP.
-
-else. "wa_param_excloth-hashvalue = 'Y'.
-    LOOP AT lt_cv ASSIGNING <ls_cv>.
-      l_dimname = <ls_cv>-dimension.
-      APPEND l_dimname TO lt_dim_list.
-    ENDLOOP.
-* MEASURES inserted in list of dimensions according to ct_data sequence of fields
-INSERT 'MEASURES' INTO lt_dim_list INDEX loop_tabix.
-
-REFRESH: ls_axis, lt_axis.
-LOOP AT lt_bu_line_mbr_node INTO ls_bu_line_mbr_node WHERE member = wa_param_buline-hashvalue.
-        ls_member-dimension = 'BU_LINE'.
-        ls_member-member = ls_bu_line_mbr_node-member.
-        INSERT ls_member INTO TABLE ls_axis.
-ENDLOOP.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-ls_member-dimension = 'CURRENCY'.
-ls_member-member = p_currency.
-INSERT ls_member INTO TABLE ls_axis.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-LOOP AT lt_datasrc_mbr_node INTO ls_datasrc_mbr_node WHERE member = wa_param_datasrc-hashvalue.
-        ls_member-dimension = 'DATASRC'.
-        ls_member-member = ls_datasrc_mbr_node-member.
-        INSERT ls_member INTO TABLE ls_axis.
-ENDLOOP.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-ls_member-dimension = 'FIGURES'.
-ls_member-member = wa_param_figures-hashvalue.
-INSERT ls_member INTO TABLE ls_axis.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-LOOP AT it_cv ASSIGNING <ls_cv> WHERE dim_upper_case = 'FUNCTIONAL_AREA'.
-      LOOP AT <ls_cv>-member INTO l_member.
-        ls_member-dimension = <ls_cv>-dimension.
-        ls_member-member = l_member.
-        INSERT ls_member INTO TABLE ls_axis.
-      ENDLOOP.
-ENDLOOP.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-ls_member-dimension = 'MEASURES'.
-ls_member-member = 'YTD'. " YTD for YTD posting allocations to be deducted
-INSERT ls_member INTO TABLE ls_axis.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-LOOP AT lt_n_account_mbr_node INTO ls_n_account_mbr_node WHERE member = wa_param_n_account-hashvalue.
-        ls_member-dimension = 'N_ACCOUNT'.
-        ls_member-member = ls_n_account_mbr_node-member.
-        INSERT ls_member INTO TABLE ls_axis.
-ENDLOOP.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-* *.I members
-LOOP AT lt_split_obs_for_input INTO ls_split_obs_for_input.
-ls_member-dimension = 'OBS'.
-ls_member-member = ls_split_obs_for_input-obs.
-INSERT ls_member INTO TABLE ls_axis.
-ENDLOOP.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-LOOP AT lt_partner_mbr_node INTO ls_partner_mbr_node WHERE member = wa_param_partner-hashvalue.
-        ls_member-dimension = 'PARTNER'.
-        ls_member-member = ls_partner_mbr_node-member.
-        INSERT ls_member INTO TABLE ls_axis.
-ENDLOOP.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-LOOP AT lt_product_mbr_node INTO ls_product_mbr_node WHERE member = wa_param_product-hashvalue.
-        ls_member-dimension = 'PRODUCT'.
-        ls_member-member = ls_product_mbr_node-member.
-        INSERT ls_member INTO TABLE ls_axis.
-ENDLOOP.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-LOOP AT lt_smart_mbr_node INTO ls_smart_mbr_node WHERE member = wa_param_smart_o-hashvalue OR member = wa_param_smart_s-hashvalue.
-        ls_member-dimension = 'SMART'.
-        ls_member-member = ls_smart_mbr_node-member.
-        INSERT ls_member INTO TABLE ls_axis.
-ENDLOOP.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-ls_member-dimension = 'TIME'.
-ls_member-member = previous_month. "previous_month for YTD posting allocations to be deducted
-INSERT ls_member INTO TABLE ls_axis.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-ls_member-dimension = 'VERSION'.
-ls_member-member = wa_param_version-hashvalue.
-INSERT ls_member INTO TABLE ls_axis.
-INSERT ls_axis INTO TABLE lt_axis.
-REFRESH: ls_axis.
-
-ENDIF. "wa_param_excloth-hashvalue = 'N'
 
 DESCRIBE TABLE lt_split_obs_2_allocate LINES l_lines_on.
 DESCRIBE TABLE lt_split_obs_for_input  LINES l_lines_t.
@@ -1373,37 +1184,39 @@ EXIT.
 ENDIF.
  lt_obs[] = lt_split_obs_for_input[].
 * check consistency of alloc_rule for base member - should always end with '.I' c_pattern and their supposed parent node
+IF wa_param_check_i-hashvalue = 'Y'.
 LOOP AT lt_split_obs_for_input INTO ls_split_obs_for_input.
+  base_obs_found = ls_split_obs_for_input-obs.
   FIND c_pattern IN ls_split_obs_for_input MATCH OFFSET off.
   SHIFT ls_split_obs_for_input BY off PLACES.
   FIND FIRST OCCURRENCE OF c_pattern IN ls_split_obs_for_input.
 IF sy-subrc = 0.
 ELSE.
 ** Raise exception
-CONCATENATE 'Wrong data in base member used to allocate' ls_split_obs_for_input
+CONCATENATE 'Wrong data in base member used to allocate .I expected, but found: ' base_obs_found ' Assess to set DM Parameter CHECK_I = N'
       INTO ld_log SEPARATED BY space.
 cl_ujk_logger=>log( i_object = ld_log ).
 RAISE EXCEPTION TYPE cx_uj_custom_logic.
 EXIT.
 ENDIF.
 ENDLOOP.
-
+ENDIF.
 "Creating the incoming data Line structure ( requires QUERY = ON )
 CREATE DATA ls_rec LIKE LINE OF ct_data.
 ASSIGN ls_rec->* TO <ls_rec>.
 
-if wa_param_query-hashvalue <> 'ON'.
+IF wa_param_query-hashvalue <> 'ON'.
   CONCATENATE 'Script Logic Query parameter is set to :' wa_param_query-hashvalue 'Please adjust to QUERY = ON in CUST_BADI_SGA_ALLOC.lgf Logic Script ' INTO ld_log SEPARATED BY space.
 cl_ujk_logger=>log( i_object = ld_log ).
 RAISE EXCEPTION TYPE cx_uj_custom_logic.
 EXIT.
-endif.
-* year-to-date is in fact year-to-date on previous mth
+ENDIF.
+* year-to-date
 
 IF lt_fa IS NOT INITIAL AND lt_split_obs_for_input IS NOT INITIAL.
 * remove SGA999 used to post analytical revenues
 DELETE lt_fa WHERE functional_area = wa_param_obs_for_fa_base-hashvalue.
-* check if CT_DATA ( based on scope or data region defined by DM) contains the records for base allocation
+* check if CT_DATA ( based on scope or data region defined by DM) contains any analytical income records for base allocation
 READ TABLE ct_data INTO <ls_rec>
 WITH KEY
 ('FUNCTIONAL_AREA') = wa_param_obs_for_fa_base-hashvalue
@@ -1427,79 +1240,7 @@ RAISE EXCEPTION TYPE cx_uj_custom_logic.
 EXIT.
 ENDIF.
 
-* GET YTD posted allocation via SQE
-* IT_CV or LT_CV contains all required selections except for OBS: we only need INPUT base member here
-" lt_dim_list and lt_axis
-
-TRY.
-*************************************************************************
-* Instantiate Application manager
-*************************************************************************
-CALL METHOD cl_uja_bpc_admin_factory=>get_application_manager
-EXPORTING
-i_appset_id = l_appset_id
-i_application_id = l_appl_id
-RECEIVING
-ro_return = lo_appl_mgr.
-
-*************************************************************************
-* Create dynamically internal table to store ytd allocation postings
-*************************************************************************
-
-CALL METHOD lo_appl_mgr->create_data_ref
-EXPORTING
-i_data_type = 'T'
-it_dim_name = lt_dim_list
-if_tech_name = abap_false
-if_signeddata = abap_true
-IMPORTING
-er_data = lr_data_ytd.
-ASSIGN lr_data_ytd->* TO <lt_inp_ytd_result>.
-*************************************************************************
-* Create internal table to store month allocation postings, now serves as
-* A temporary back-up for ytd allocation postings
-*************************************************************************
-
-CALL METHOD lo_appl_mgr->create_data_ref
-EXPORTING
-i_data_type = 'T'
-it_dim_name = lt_dim_list
-if_tech_name = abap_false
-if_signeddata = abap_true
-IMPORTING
-er_data = lr_data_mth_bup.
-ASSIGN lr_data_mth_bup->* TO <lt_inp_mth_result_bup>.
-*************************************************************************
-* Query for ytd allocations posted on *.I base members (not checking if 95000 etc)
-*************************************************************************
-CALL METHOD cl_ujo_query_factory=>get_query_adapter
-EXPORTING
-i_appset_id = l_appset_id
-i_appl_id = l_appl_id
-RECEIVING
-adapter = lo_sqe.
-
-CALL METHOD lo_sqe->run_axis_query_symm
-EXPORTING
-it_axis = lt_axis
-it_slicer = lt_slicer
-IMPORTING
-et_data = <lt_inp_ytd_result>.
-    CATCH
-       cx_ujo_read
-       cx_uj_static_check INTO lx_static.
-ENDTRY.
-* on top of internal tables we create structures to adjust table content
-CREATE DATA lr_rec_ytd LIKE LINE OF <lt_inp_ytd_result>.
-ASSIGN lr_rec_ytd->* TO <ls_inp_ytd_result>.
-
-CREATE DATA lr_rec_ytd_bup LIKE LINE OF <lt_inp_mth_result_bup>.
-ASSIGN lr_rec_ytd_bup->* TO <ls_inp_ytd_result_bup>.
-
-CREATE DATA lr_rec_mth_bup LIKE LINE OF <lt_inp_mth_result_bup>.
-ASSIGN lr_rec_mth_bup->* TO <ls_inp_mth_result_bup>.
-
-"Creating other incoming data Line structure
+"Creating additional incoming data Line structure
 
 CREATE DATA ls_bup LIKE LINE OF ct_data.
 ASSIGN ls_bup->* TO <ls_bup>.
@@ -1511,7 +1252,7 @@ ASSIGN lt_bup->* TO <lt_bup>.
 ASSIGN COMPONENT:
 'TIME' OF STRUCTURE <ls_rec> TO <l_time>,
 'MEASURES' OF STRUCTURE <ls_rec> TO <l_per_qtd_ytd>.
-
+BREAK-POINT. "export ct_data as ct_data_by_mth
 LOOP AT ct_data INTO <ls_rec>.
   <l_time> = current_month.
   <l_per_qtd_ytd> = 'YTD'.
@@ -1519,123 +1260,67 @@ LOOP AT ct_data INTO <ls_rec>.
 ENDLOOP.
 
 REFRESH: ct_data.
-* nothing to deduct when YYYY_01 as write-off on current_month ( 01 ) done at the end
-IF cmth_im <> 1 or NOT <lt_inp_ytd_result> IS INITIAL.
-* align ytd allocation postings with incoming ct_data
-* to be agregated data by OBS members nodes ( as defined in property ALLOC_RULE )
-* <lt_inp_ytd_result> has OBS such as *.I eg. 60_S.I while <lt_bup> has ie. ALLOC_RULE ( /CPMB/IJPCTQT )
-* TIME fakely changed to properly read ct_data ( to deduct YTD previous month alloc posting )that has current_month
-ASSIGN COMPONENT: '/CPMB/IJPCTQT' OF STRUCTURE <fs_obsstruct> TO <l_alloc_rule>.
-LOOP AT <lt_inp_ytd_result> ASSIGNING <ls_inp_ytd_result>.
-  ASSIGN COMPONENT:
- 'TIME' OF STRUCTURE <ls_inp_ytd_result> TO <l_time>.
- <l_time> = current_month. " fakely changed to properly read ct_data that has current_month
-  ASSIGN COMPONENT: 'OBS' OF STRUCTURE <ls_inp_ytd_result> TO <l_obs>.
-  READ TABLE <fs_obsdata> INTO <fs_obsstruct> WITH KEY ('/CPMB/IJDP3S6') = <l_obs>.
-IF sy-subrc = 0.
-  <l_obs> = <l_alloc_rule>.
-ENDIF.
-ENDLOOP.
-* change the base members with their nodes
-
-LOOP AT <lt_inp_ytd_result> ASSIGNING <ls_inp_ytd_result>.
-  ASSIGN COMPONENT:
- 'BU_LINE' OF STRUCTURE <ls_inp_ytd_result> TO <l_bu_line>,
- 'DATASRC' OF STRUCTURE <ls_inp_ytd_result> TO <l_datasrc>,
- 'FIGURES' OF STRUCTURE <ls_inp_ytd_result> TO <l_figures>,
- 'N_ACCOUNT' OF STRUCTURE <ls_inp_ytd_result> TO <l_n_account>,
- 'PARTNER' OF STRUCTURE <ls_inp_ytd_result> TO <l_partner>,
- 'PRODUCT' OF STRUCTURE <ls_inp_ytd_result> TO <l_product>,
- 'SMART' OF STRUCTURE <ls_inp_ytd_result> TO <l_smart>,
- 'VERSION' OF STRUCTURE <ls_inp_ytd_result> TO <l_version>.
-
-<l_smart> =   p_smart_topnode.
-<l_bu_line> = p_bu_line_topnode.
-<l_datasrc> = p_datasrc_topnode.
-<l_figures> = p_figures.
-<l_n_account> = p_n_account_topnode.
-<l_partner> = p_partner_topnode.
-<l_product> = p_product_topnode.
-
-ENDLOOP.
-
-* collect since we have eventual duplicates due to ALLOC_RULE substituting OBS *.I
-* and *-1 to add up afterwards ( equal to reverse )
-LOOP AT <lt_inp_ytd_result> INTO <ls_inp_ytd_result_bup>.
-ASSIGN COMPONENT 'SIGNEDDATA' OF STRUCTURE <ls_inp_ytd_result_bup> TO  <l_signeddata>.
-  <l_signeddata> = <l_signeddata> * -1.
-  COLLECT <ls_inp_ytd_result_bup> INTO <lt_inp_mth_result_bup>.
-ENDLOOP.
-* restore ytd after aggregation
-REFRESH:<lt_inp_ytd_result>.
-<lt_inp_ytd_result> = <lt_inp_mth_result_bup>.
-REFRESH:<lt_inp_mth_result_bup>.
-* start !! working with hashtable readable by any field as key except signeddata
-TRY.
-  CALL METHOD cl_ujk_model=>get_structure
-  EXPORTING
-i_type = 'H'
-if_with_measure = abap_true
-if_with_signeddata = abap_true
-RECEIVING rr_data = lr_hashtable.
-      CATCH
-       cx_ujo_read
-       cx_uj_static_check INTO lx_static.
-ENDTRY.
-ASSIGN lr_hashtable->* TO <lht_data>.
-
-MOVE-CORRESPONDING <lt_inp_ytd_result> to <lht_data>.
-* or
-*<lht_data> = <lt_inp_ytd_result>.
-REFRESH: <lt_inp_ytd_result>.
-CREATE DATA lr_key LIKE LINE OF <lht_data>.
-ASSIGN lr_key->* TO <ls_key>.
-* to DEDUCT computed allocations on prior strictly months - current mth is written-off in any case at the end
-l_time_cond = current_month. "just for test
-
- LOOP AT <lt_bup> ASSIGNING <ls_bup>. " WHERE (l_time_cond).
-   ASSIGN COMPONENT 'SIGNEDDATA' OF STRUCTURE <ls_bup> TO <l_origin_data>.
-   orig_amount = <l_origin_data>.
-   ASSIGN COMPONENT 'SIGNEDDATA' OF STRUCTURE <ls_key> TO <l_signeddata>.
-   READ TABLE <lht_data> FROM <ls_bup> INTO <ls_key> .
-   IF sy-subrc = 0.
-     <l_origin_data> = orig_amount + <l_signeddata>. "deduct by adding after *-1 in prev step
-   ENDIF.
-   CLEAR:orig_amount.
- ENDLOOP.
- REFRESH:<lht_data>.
-ENDIF.
+BREAK-POINT. "export <lt_bup> as ct_data_ytd
 ct_data[] = <lt_bup>[].
 REFRESH:<lt_bup>.
-* end !! working with hashtable readable by any field as key except signeddata
-
+REFRESH:<lt_bup>.
 * Start - Check Any Running DM package running + Validate DM package selections and parameters
 * check if Base members used to post allocation are well described in parenth4 hierarchy
 *int table <fs_obsdata> <fs_fadata>
+DATA:   gdo_obs_mdata TYPE REF TO data,
+        lo_obs_mdata_struct TYPE REF TO cl_abap_structdescr,
+        lt_obs_mdata_comp TYPE cl_abap_structdescr=>component_table,
+        ref_obj_obs_mdata_struc TYPE REF TO cl_abap_structdescr,
+        ref_obj_obs_mdata_table TYPE REF TO cl_abap_tabledescr,
+        gso_obs_mdata_handle  TYPE REF TO data,
+        gdo_obs_mdata_handle  TYPE REF TO data.
+
+FIELD-SYMBOLS: <gs_obs_mdata_struc>   TYPE any,
+               <fs_obs_madata_struct>    TYPE any,
+               <fs_obs_mdata_data> TYPE INDEX TABLE.
+
+CREATE DATA gdo_obs_mdata TYPE (wa_obs_info-data_table).
+ASSIGN gdo_obs_mdata->* TO <gs_obs_mdata_struc>.
+CHECK ( <gs_obs_mdata_struc> IS ASSIGNED ).
+
+lo_obs_mdata_struct ?= cl_abap_typedescr=>describe_by_data( <gs_obs_mdata_struc> ).
+lt_obs_mdata_comp = lo_obs_mdata_struct->get_components( ).
+DELETE lt_obs_mdata_comp WHERE name = 'MANDT' OR name = 'LANGU' OR name = 'OBJVERS'.
+
+* create dynamic structure and table for descriptions
+ref_obj_obs_mdata_struc = cl_abap_structdescr=>get( p_components = lt_obs_mdata_comp p_strict = ' ' ). "CALL METHOD cl_abap_structdescr=>create
+ref_obj_obs_mdata_table ?= cl_abap_tabledescr=>create( ref_obj_obs_mdata_struc ).
+
+CREATE DATA gso_obs_mdata_handle TYPE HANDLE ref_obj_obs_mdata_struc.
+ASSIGN gso_obs_mdata_handle->* TO <fs_obs_madata_struct>.
+
+CREATE DATA gdo_obs_mdata_handle TYPE HANDLE ref_obj_obs_mdata_table.
+ASSIGN gdo_obs_mdata_handle->* TO <fs_obs_mdata_data>.
+
   SELECT * FROM (wa_obs_info-data_table)
-  INTO CORRESPONDING FIELDS OF TABLE lt_obs_mdata
+  INTO CORRESPONDING FIELDS OF TABLE <fs_obs_mdata_data>
   FOR ALL ENTRIES IN lt_obs
   WHERE /cpmb/ijdp3s6 = lt_obs-obs AND /cpmb/hir NOT LIKE w_pred_obs. "'%H4%' .
 
-IF NOT lt_obs_mdata IS INITIAL.
-READ TABLE lt_obs_mdata INTO ls_obs_mdata INDEX 1.
-CONCATENATE 'Some Base Members used to post allocation are not in H4 hierarchy' ls_obs_mdata INTO ld_log SEPARATED BY space.
+IF NOT <fs_obs_mdata_data> IS INITIAL.
+READ TABLE <fs_obs_mdata_data> INTO <fs_obs_madata_struct> INDEX 1.
+CONCATENATE 'Some Base Members used to post allocation are not in H4 hierarchy' <fs_obs_madata_struct> INTO ld_log SEPARATED BY space.
 cl_ujk_logger=>log( i_object = ld_log ).
 RAISE EXCEPTION TYPE cx_uj_custom_logic.
   EXIT.
 ENDIF.
 * check if Parent Nodes of Base members used to post allocation are well described in parenth4 hierarchy
-REFRESH: lt_obs,lt_obs_mdata.
+REFRESH: lt_obs, <fs_obs_mdata_data>.
 lt_obs[] = lt_split_obs_2_allocate[].
 
 SELECT * FROM (wa_obs_info-data_table)
-INTO TABLE lt_obs_mdata
+INTO CORRESPONDING FIELDS OF TABLE <fs_obs_mdata_data>
 FOR ALL ENTRIES IN lt_obs
 WHERE /cpmb/ijdp3s6 = lt_obs-obs AND /cpmb/hir NOT LIKE w_pred_obs. "'%H4%'.
 
-IF NOT lt_obs_mdata IS INITIAL.
-READ TABLE lt_obs_mdata INTO ls_obs_mdata INDEX 1.
-CONCATENATE 'Some Parent Nodes of Members used to post allocation are not in H4 hierarchy' ls_obs_mdata INTO ld_log SEPARATED BY space.
+IF NOT <fs_obs_mdata_data> IS INITIAL.
+READ TABLE <fs_obs_mdata_data> INTO <fs_obs_madata_struct>  INDEX 1.
+CONCATENATE 'Some Parent Nodes of Members used to post allocation are not in H4 hierarchy' <fs_obs_madata_struct> INTO ld_log SEPARATED BY space.
 cl_ujk_logger=>log( i_object = ld_log ).
 RAISE EXCEPTION TYPE cx_uj_custom_logic.
   EXIT.
@@ -1707,7 +1392,6 @@ ENDIF.
 * lt_comp holds now the additional property PARENT_LV1
 
 ref_obj_struc = cl_abap_structdescr=>get( p_components = lt_comp p_strict = ' ' ). "CALL METHOD cl_abap_structdescr=>create
-* Create new table type
 ref_obj_table ?= cl_abap_tabledescr=>create( ref_obj_struc ).
 * Create 2 working internal tables and assign to Field Symbol
 CREATE DATA gso_handle TYPE HANDLE ref_obj_struc.
@@ -1760,6 +1444,7 @@ LOOP AT ct_data INTO <ls_rec>.
     ENDIF.
     ENDIF.
 ENDLOOP.
+BREAK-POINT. "export <lt_ds2>
 * get the properties of OBS parent node to allocate
 LOOP AT lt_dist_obs INTO ls_dist_obs.
 ASSIGN COMPONENT: 'OBS' OF STRUCTURE <fs_obsstruct> TO <l_obs_mbr>.
@@ -1789,7 +1474,6 @@ ASSIGN COMPONENT:
 
 REFRESH: <fs_data_extd>.
 CLEAR:<fs_struct>.
-
 * Now calculating the percentage of total revenue
 LOOP AT <fs_base_extd> INTO <fs_struct>.
 orig_amount = <l_signeddata>.
@@ -1809,7 +1493,8 @@ ASSIGN COMPONENT:
  'PARENT_LV1' OF STRUCTURE <fs_struct> TO <l_parent_lv1>,
  'SIGNEDDATA' OF STRUCTURE <fs_struct> TO <l_percentage>,
  'SIGNEDDATA' OF STRUCTURE <fs_xstruct> TO <l_perc_applied>,
- 'FUNCTIONAL_AREA' OF STRUCTURE <fs_xstruct> TO <l_funct_area>.
+ 'FUNCTIONAL_AREA' OF STRUCTURE <fs_xstruct> TO <l_funct_area>,
+ 'N_ACCOUNT' OF STRUCTURE <fs_xstruct> TO <l_n_account>.
 
 * we apply the percentage calculated in previous step <fs_base_extd> vs <lt_ds0>
 REFRESH: <fs_base_extd>.
@@ -1821,11 +1506,13 @@ LOOP AT <lt_ds2> INTO <ls_ds2>.
     MOVE-CORRESPONDING <fs_struct> TO <fs_xstruct>.
     <l_perc_applied> = orig_amount * orig_perc.
     <l_funct_area> = <l_functional_area>.
+    <l_n_account> = 'N2'.
     APPEND <fs_xstruct> TO <fs_base_extd>.
   ENDLOOP.
 ENDLOOP.
 
 ASSIGN COMPONENT:
+
 'FUNCTIONAL_AREA' OF STRUCTURE <fs_struct> TO <l_functional_area>,
 'OBS' OF STRUCTURE <fs_struct> TO <l_entity>,
 'SIGNEDDATA' OF STRUCTURE <fs_struct> TO <l_perc_applied>,
@@ -1903,7 +1590,6 @@ APPEND <fs_xstruct> TO <fs_base_extd>.
 ENDLOOP.
 CLEAR: l_lines, l_lines_on.
 
-*BREAK bb5827.
 *ct_data = CORRESPONDING #( <fs_base_extd> EXCEPT PARENT_LV1 ).
 DESCRIBE TABLE <fs_base_extd> LINES  l_lines.
 l_lines_on = l_lines.
@@ -1930,61 +1616,28 @@ LOOP AT <fs_base_extd> INTO <fs_xstruct>.
  APPEND <ls_rec> TO ct_data.
  ENDIF.
 ENDLOOP.
+BREAK-POINT. "export ct_data as posted_0x
+IF ct_data IS INITIAL.
+  CONCATENATE 'No additionnal allocation postings to be processed for period: ' current_month  INTO ld_log SEPARATED BY space.
+cl_ujk_logger=>log( i_object = ld_log ).
+ELSE.
+DESCRIBE TABLE ct_data LINES l_lines.
+CONCATENATE 'Wrote' l_lines_on 'lines to CT_DATA for model' i_appl_id '.' INTO ld_log SEPARATED BY space.
+ENDIF.
 REFRESH: <fs_base_extd>, lt_dist_obs, lt_dist_obs_fa, lt_dist_fa, <fs_obsdata_input>, <fs_obsdata>, <fs_fadata>.
 ENDIF.
 
-* Always Write-Off Current Month Allocations ( using input_for_node = 'X' )
-* lt_axis with PERIODIC and month = current_month
-* Start write-off current month allocations postings
-* Updating predicates TIME = current_month and MEASURES = PERIODIC
-REFRESH: <lt_inp_mth_result_bup>. "already done
-
-LOOP AT lt_axis ASSIGNING <ls_axis>.
-  READ TABLE <ls_axis> WITH KEY DIMENSION = 'TIME' ASSIGNING <ls_member>.
-  IF SY-SUBRC = 0.
-    <ls_member>-member = current_month.
-  ENDIF.
-  READ TABLE <ls_axis> WITH KEY DIMENSION = 'MEASURES' ASSIGNING <ls_member>.
-  IF SY-SUBRC = 0.
-   <ls_member>-member = 'PERIODIC'.
-  ENDIF.
-ENDLOOP.
-
-TRY.
-  CALL METHOD lo_sqe->run_axis_query_symm
-EXPORTING
-it_axis = lt_axis
-it_slicer = lt_slicer
-IMPORTING
-et_data = <lt_inp_mth_result_bup>.
-    CATCH
-       cx_ujo_read
-       cx_uj_static_check INTO lx_static.
-ENDTRY.
-
-LOOP AT <lt_inp_mth_result_bup> ASSIGNING <ls_inp_mth_result_bup>.
-  ASSIGN COMPONENT:
-'SIGNEDDATA' OF STRUCTURE <ls_inp_mth_result_bup> TO <l_origin_data>.
-  <l_origin_data> = <l_origin_data> * -1.
- IF <l_origin_data> <> 0.
- MOVE-CORRESPONDING <ls_inp_mth_result_bup> TO <ls_rec>.
- APPEND <ls_rec> TO ct_data.
- ENDIF.
-ENDLOOP.
-* end write-off current month allocations postings
 
 ENDIF. " check lt_obs_h4 or lt_fa_h7 is empty
 
 ENDIF. "check other BPC jobs running
 ENDIF.
-
 * set WRITE = ON in logic script to write SGA model
 IF wa_param_write-hashvalue = 'OFF'.
 
 IF wa_param_debug-hashvalue = 'ON'.
 CONCATENATE 'When Write is OFF WITH debugging: ' wa_param_debug-hashvalue ' No records are inserted in Model' INTO ld_log SEPARATED BY space.
 cl_ujk_logger=>log( i_object = ld_log ).
-BREAK-POINT.
 RAISE EXCEPTION TYPE cx_uj_custom_logic.
  EXIT.
 ELSE.
@@ -1996,8 +1649,9 @@ ENDIF.
 
 REFRESH:ct_data. "useless exit before...
 ENDIF.
-REFRESH: <lt_inp_mth_result_bup>.
+
 ENDMETHOD.
+
 
 
 * <SIGNATURE>---------------------------------------------------------------------------------------+
