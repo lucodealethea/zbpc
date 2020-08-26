@@ -1,0 +1,50 @@
+@AbapCatalog.sqlViewName: 'ZVBPCUJDLINKSLOG'
+@AbapCatalog.compiler.compareFilter: true
+@AbapCatalog.preserveKey: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Logs on Package and Link'
+define view ZBPC_UJD_LINKS_LOG as select from zvbpc_ujdlinks as LI 
+inner join ujd_link_log as LO on LI.mandt = LO.mandt and LO.link_id = LI.link_id
+inner join ujd_lk_task_log as TL on TL.mandt = LO.mandt and TL.link_log_id = LO.link_log_id
+inner join ujd_plink_log as nlo on nlo.mandt = LO.mandt and nlo.link_log_id = LO.link_log_id
+inner join ujd_status as st on st.mandt = TL.mandt and st.log_id = TL.task_instance_id
+left outer join ujd_packages2 as PCK on st.mandt = PCK.mandt                                                  
+and st.application_id = PCK.app_id                                                                   
+and st.appset_id = PCK.appset_id                                                                     
+and st.package_id = PCK.package_id                                                                   
+and st.chain_id = PCK.chain_id
+{
+key LO.mandt, 
+key LI.service_link_id, 
+key PCK.guid,
+key TL.task_instance_id as task_log_id,
+key TL.link_log_id as log_id,
+
+LI.appset_id, 
+LI.app_id, 
+nlo.user_id,
+LI.team_id,
+//LI.user_id,
+st.package_id,
+LO.link_name as link_name, 
+//LO.link_description, 
+//LO.start_timestamp as link_start_timestmp, 
+//LO.end_timestamp as link_end_timestmp, 
+LO.process_result as link_process_result,
+concat(concat(concat(concat(concat(concat(concat('/root/webfolders/',st.appset_id),'/'),st.application_id),'/privatepublications/'),st.user_id),'/tempfiles/'),st.log_file) as log_file,
+LI.content, 
+LO.job_id, 
+LO.job_name,
+TL.task_instance_id, 
+TL.process_id, 
+//TL.link_type, 
+TL.name as task_name_package_id, 
+st.chain_id,
+//TL.description, 
+TL.pinstance_id, 
+TL.start_timestamp as task_start_timestamp, 
+TL.end_timestamp as task_end_timestmp, 
+st.status,
+TL.process_result as task_process_result
+    
+}
