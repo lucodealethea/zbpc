@@ -13,13 +13,18 @@ and st.application_id = PCK.app_id
 and st.appset_id = PCK.appset_id                                                                     
 and st.package_id = PCK.package_id                                                                   
 and st.chain_id = PCK.chain_id
+left outer join ujd_packagest2 as TX                                                                      
+on PCK.mandt = TX.mandt and PCK.guid = TX.guid
 {
 key LO.mandt, 
 key LI.service_link_id, 
 key PCK.guid,
 key TL.task_instance_id as task_log_id,
 key TL.link_log_id as log_id,
-
+PCK.group_id,
+PCK.package_type,                                                                                    
+PCK.user_group,                                                                                      
+TX.package_desc,
 LI.appset_id, 
 LI.app_id, 
 nlo.user_id,
