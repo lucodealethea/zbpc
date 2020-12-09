@@ -9,6 +9,11 @@
 009	Schedule Info (XML)
 010	Raise message when package failed or canceled
 011	If answerprompt value is a file service path
+*Table
+ZBPC_PERIOD_VERSION
+PERIOD	/BIC/OISM_PERIOD	CHAR	7	0	PERIOD
+VERSION	/BIC/OISM_VERSIO	CHAR	32	0	VERSION
+FLAG	ZFLAG_HDLD	CHAR	1	0	Combination Handled
 
 REPORT ZBW_BPC_DATA_PACKAGE_DYN.
 
@@ -22,8 +27,8 @@ DATA :
   LS_PACKAGE      TYPE UJD_PACKAGES2,
   LT_PACKAGE_LIST TYPE STANDARD TABLE OF UJD_PACKAGES2,
   BEGIN OF LS_PROMPT,
-    PERIOD  TYPE /BIC/OISM_PHASE,
-    VERSION TYPE /BIC/OISM_VERSIO,
+    PERIOD  TYPE UJ_DIM_MEMBER,
+    VERSION TYPE UJ_DIM_MEMBER,
   END OF LS_PROMPT,
   LT_PROMPT LIKE HASHED TABLE OF LS_PROMPT WITH UNIQUE KEY PERIOD VERSION.
 FIELD-SYMBOLS: <FS_PROMPT> LIKE LS_PROMPT.
@@ -31,7 +36,7 @@ DATA : LV_PROMPT_DYN TYPE STRING,
        LV_MESSAGE    TYPE STRING.
 
 DATA LT_LIST_TAB TYPE TABLE OF ABAPLIST.
-DATA LS_RESULT TYPE ZFSMT_T_SCPT_PRT.
+DATA LS_RESULT TYPE ZBPC_PERIOD_VERSION.
 *************************************************************************
 **************PARAMETERS*************************************************
 *IF Synchronous
@@ -271,8 +276,8 @@ FORM CHECK_INPUT .
 ENDFORM.
 ****************SCOPE TO LAUNCH******************************************
 FORM SCOPE_TO_LAUNCH.
-*Select scope from table ZFSMT_T_SCPT_PRT according a flag wich says if the scope has been already processed
-  SELECT PERIOD VERSION FROM ZFSMT_T_SCPT_PRT
+*Select scope from table ZBPC_PERIOD_VERSION according a flag wich says if the scope has been already processed
+  SELECT PERIOD VERSION FROM ZBPC_PERIOD_VERSION
   INTO TABLE LT_PROMPT
   WHERE FLAG = 'X'.
   IF SY-SUBRC = 0.
