@@ -53,7 +53,7 @@ METHOD if_uj_custom_logic~cleanup.
 *      DO. IF t_debug_flag_cleanup = ' '. EXIT. ENDIF.
 *      ENDDO.
 *    ENDIF.
-*BREAK-POINT.
+*BREAK BB5827.
 ENDMETHOD.
 
 
@@ -152,6 +152,7 @@ DATA:       wa_param_fa_top_node           TYPE ujk_s_script_logic_hashentry,
             wa_param_bu_line_t             TYPE ujk_s_script_logic_hashentry,
             wa_param_datasrc_t             TYPE ujk_s_script_logic_hashentry,
             wa_param_n_account_t           TYPE ujk_s_script_logic_hashentry,
+            wa_param_n_account_t2          TYPE ujk_s_script_logic_hashentry,
             wa_param_partner_t             TYPE ujk_s_script_logic_hashentry,
             wa_param_product_t             TYPE ujk_s_script_logic_hashentry,
             wa_param_version_t             TYPE ujk_s_script_logic_hashentry,
@@ -170,6 +171,7 @@ DATA:       wa_param_obs_gb41_input      TYPE ujk_s_script_logic_hashentry,
 DATA:
             wa_param_obs_sg43_addhie_i   TYPE ujk_s_script_logic_hashentry,
             wa_param_obs_sg43_adjust_i   TYPE ujk_s_script_logic_hashentry,
+            wa_param_obs_sg43_adjust_i2  TYPE ujk_s_script_logic_hashentry,
             wa_param_node_sg43_n_1       TYPE ujk_s_script_logic_hashentry,
             wa_param_node_sg43_n_2       TYPE ujk_s_script_logic_hashentry,
             wa_param_node_sg43_d_1       TYPE ujk_s_script_logic_hashentry.
@@ -180,6 +182,7 @@ DATA:       lt_split_obs_gb41_input      TYPE tty_obs,
 
 DATA:       orig_n_account               TYPE uj_dim_member,
             orig_obs                     TYPE uj_dim_member,
+            orig_partner                 TYPE uj_dim_member,
             skf_fa_perc                  TYPE /b28/oisdata,
             orig_amount                  TYPE /b28/oisdata.
 
@@ -221,6 +224,8 @@ DATA: gdo_obsdata       TYPE REF TO data,
       gdo_obshandle TYPE REF TO data.
 
 DATA: ls_rec                TYPE REF TO data,
+      ls_rec2               TYPE REF TO data,
+      ls_rec3               TYPE REF TO data,
       lt_databup            TYPE REF TO data,
       lt_dataytd            TYPE REF TO data,
 
@@ -237,6 +242,7 @@ DATA:  l_fa_node_def   TYPE uj_dim_member,
        l_datasrctarget   TYPE uj_dim_member,
        l_currencytarget  TYPE uj_dim_member,
        l_n_accounttarget  TYPE uj_dim_member,
+       l_n_accounttarget2 TYPE uj_dim_member,
        l_fatarget        TYPE  uj_dim_member,
        l_partnertarget TYPE  uj_dim_member,
        l_producttarget TYPE  uj_dim_member,
@@ -271,7 +277,9 @@ FIELD-SYMBOLS:  <dist_skf_obs_n_account> TYPE ty_dist_nacc_obs,
                 <ls_fa_mbr_node>         TYPE uja_s_mbr_node,
 
                  <ls_rec>                TYPE any,
+                 <ls_rec_sga>            TYPE any,
                  <ls_data>               TYPE any,
+                                  <ls_data2>               TYPE any,
                  <ls_hours_perc>         TYPE any,
 
                  <l_time>                TYPE any, "Dimension
@@ -279,6 +287,7 @@ FIELD-SYMBOLS:  <dist_skf_obs_n_account> TYPE ty_dist_nacc_obs,
                  <l_figures>             TYPE any, "Dimension
                  <l_functional_area>     TYPE any, "Dimension
                  <l_newobs>              TYPE any, "Dimension
+                 <l_new_n_acc>           TYPE any, "Dimension
                  <l_obs>                 TYPE any, "Dimension
                  <l_obs_input>           TYPE any, "Dimension
                  <l_bus_area>            TYPE any, "Dimension
@@ -346,6 +355,7 @@ DATA: l_ctr             TYPE i,
 
 DATA: v_key_denom_1     TYPE uj_dim_member,
       v_numer_1         TYPE uj_dim_member,
+      v_numer_2         TYPE uj_dim_member,
       v_sub_tot_obs_41      TYPE uj_dim_member,
       v_sub_tot_obs_42      TYPE uj_dim_member,
       v_sub_tot_obs_43      TYPE uj_dim_member,
@@ -361,12 +371,19 @@ CONSTANTS: c_sep            TYPE char1 VALUE ',',
            w_pred_obsh1        TYPE char3 VALUE 'H4%',
            w_pred_obsh2        TYPE char3 VALUE 'H5%',
            c_input_suf         TYPE char2 VALUE '.I',
-           c_prefix_43         TYPE CHAR2 VALUE '43',
+           c_prefix_41         TYPE char2 VALUE '41',
+           c_prefix_42         TYPE char2 VALUE '42',
+           c_prefix_43         TYPE char2 VALUE '43',
+           c_prefix_h4         TYPE char2 VALUE 'H4',
+           c_zz                TYPE uj_dim_member VALUE 'ZZZZZZ',
+           c_99                TYPE uj_dim_member VALUE '999999',
+           c_43_4301           TYPE uj_dim_member VALUE '43_4301',
            c_selector_hours_n1 TYPE uj_dim_member VALUE 'HOURS_N1',
            c_selector_hours_n2 TYPE uj_dim_member VALUE 'HOURS_N2',
            c_selector_n2       TYPE uj_dim_member VALUE 'N2',
            c_selector_hours    TYPE uj_dim_member VALUE 'HOURS',
            c_selector_woff     TYPE uj_dim_member VALUE 'WRITEOFF',
+           c_selector_diff     TYPE uj_dim_member VALUE 'DIFFERENCE',
            c_selector_perc     TYPE uj_dim_member VALUE 'PERCENTAGE',
            c_selector_amt      TYPE uj_dim_member VALUE 'AMOUNT',
            c_periodic          TYPE uj_dim_member VALUE 'PERIODIC',
@@ -443,9 +460,11 @@ l_s_smarttarget = wa_param_s_smart-hashvalue.
 READ TABLE it_param WITH TABLE KEY hashkey = 'BU_LINE_T'             INTO wa_param_bu_line_t.
 l_bu_linetarget = wa_param_bu_line_t-hashvalue..
 READ TABLE it_param WITH TABLE KEY hashkey = 'DATASRC_T'             INTO wa_param_datasrc_t.
-l_datasrctarget = wa_param_datasrc_t-hashvalue..
+l_datasrctarget = wa_param_datasrc_t-hashvalue.
 READ TABLE it_param WITH TABLE KEY hashkey = 'N_ACCOUNT_T'           INTO wa_param_n_account_t.
-l_n_accounttarget = wa_param_n_account_t-hashvalue..
+l_n_accounttarget = wa_param_n_account_t-hashvalue.
+READ TABLE it_param WITH TABLE KEY hashkey = 'N_ACCOUNT_T2'          INTO wa_param_n_account_t2.
+l_n_accounttarget2 = wa_param_n_account_t2-hashvalue.
 READ TABLE it_param WITH TABLE KEY hashkey = 'PARTNER_T'             INTO wa_param_partner_t.
 l_partnertarget = wa_param_partner_t-hashvalue.
 READ TABLE it_param WITH TABLE KEY hashkey = 'PRODUCT_T'             INTO wa_param_product_t.
@@ -464,14 +483,18 @@ READ TABLE it_param WITH TABLE KEY hashkey = 'OBS_SG43_WHAT_2' INTO wa_param_obs
 
 READ TABLE it_param WITH TABLE KEY hashkey = 'OBS_SG43_ADDHIE_I' INTO wa_param_obs_sg43_addhie_i.
 READ TABLE it_param WITH TABLE KEY hashkey = 'OBS_SG43_ADJUST_I' INTO wa_param_obs_sg43_adjust_i.
+READ TABLE it_param WITH TABLE KEY hashkey = 'OBS_SG43_ADJUST_I2' INTO wa_param_obs_sg43_adjust_i2.
 READ TABLE it_param WITH TABLE KEY hashkey = 'NODE_SG43_N_1'     INTO wa_param_node_sg43_n_1.
 READ TABLE it_param WITH TABLE KEY hashkey = 'NODE_SG43_N_2'     INTO wa_param_node_sg43_n_2.
 READ TABLE it_param WITH TABLE KEY hashkey = 'NODE_SG43_D_1'     INTO wa_param_node_sg43_d_1.
 
-*H4_43_430X_TO_430Y_H4_43_4301
-CONCATENATE wa_param_node_sg43_d_1-hashvalue wa_param_obs_sg43_what_1-hashvalue INTO v_key_denom_1 SEPARATED BY '_'.
+*v_key_denom_1 H4_43_430X_TO_430Y_&_H4_43_4301
+*CONCATENATE wa_param_node_sg43_d_1-hashvalue '' INTO v_key_denom_1 SEPARATED BY '_'.
+CONCATENATE wa_param_node_sg43_d_1-hashvalue wa_param_obs_sg43_what_1-hashvalue INTO v_key_denom_1 SEPARATED BY '_&_'.
+*H4_4302_4305_&_H4_4306
+CONCATENATE wa_param_node_sg43_n_1-hashvalue wa_param_node_sg43_n_2-hashvalue INTO v_numer_1 SEPARATED BY '_&_'.
 *H4_4302_4305_+_43.S090
-CONCATENATE wa_param_node_sg43_n_1-hashvalue wa_param_obs_sg43_adjust_i-hashvalue INTO v_numer_1 SEPARATED BY '_+_'.
+CONCATENATE wa_param_node_sg43_n_1-hashvalue wa_param_obs_sg43_adjust_i-hashvalue INTO v_numer_2 SEPARATED BY '_&_'.
 
 *&---------------------------------------------------------------------*
 *& GET INPUT MEMBERS FROM DATA MANAGER PROMPTS (VARIABLES %)
@@ -762,7 +785,10 @@ ENDIF.
 *Creating the incoming data Line structure ( requires QUERY = ON )
 CREATE DATA ls_rec LIKE LINE OF ct_data.
 ASSIGN ls_rec->* TO <ls_data>.
-ASSIGN ls_rec->* TO <ls_rec>.
+CREATE DATA ls_rec2 LIKE LINE OF ct_data.
+ASSIGN ls_rec2->* TO <ls_rec>.
+CREATE DATA ls_rec3 LIKE LINE OF ct_data.
+ASSIGN ls_rec3->* TO <ls_rec_sga>.
 *Creating internal table based on Line structure
 CREATE DATA lt_databup LIKE ct_data.
 ASSIGN lt_databup->* TO <lt_databup>.
@@ -825,34 +851,27 @@ ENDLOOP.
 UNASSIGN: <l_n_account>,<l_obs>,<l_time>,<l_per_qtd_ytd>,<l_bus_area>,<l_calc>,<l_parenth1>,<l_parenth4>,<l_parenth5>.
 *&---------------------------------------------------------------------*
 *& Cleanse DATASET with HOURS figures on N2 n_account tuple not required
+*& Except for 43.S090 stored in VAR wa_param_obs_sg43_adjust_i-hashvalue
 *&---------------------------------------------------------------------*
 CLEAR wa_strg.
 CONCATENATE 'FIGURES EQ ''' c_selector_hours  '''' INTO wa_strg.
-*CONCATENATE wa_strg c_sep_sp 'AND N_ACCOUNT EQ ''' c_selector_n2  '''' INTO wa_strg.
 CONCATENATE wa_strg ` ` 'AND N_ACCOUNT EQ ''' c_selector_n2  '''' INTO wa_strg.
+CONCATENATE wa_strg ` ` 'AND OBS NE ''' wa_param_obs_sg43_adjust_i-hashvalue  '''' INTO wa_strg.
 DELETE <lt_dataytd> WHERE (wa_strg).
-
-* back-up ytd before adding required OBS nodes
-<lt_databup>[] = <lt_dataytd>[].
-
-BREAK BB5827.
 
 UNASSIGN:<l_bu_line>,<l_currency>,<l_datasrc>,<l_figures>,<l_functional_area>,<l_n_account>,<l_obs>,<l_partner>,
          <l_product>,<l_smart>,<l_time>,<l_version>,<l_per_qtd_ytd>,<l_signed_data>.
 
 REFRESH: ct_data.
 ct_data[] = <lt_dataytd>[].
-*REFRESH: <lt_dataytd>.
-*BREAK BB5827.
 
-* using measures to store the ALLOC_RULE from OBS master data
 * using version to store PARENTH4 / bu_line to store PARENTH5
 
 REFRESH: <lt_hours_skf>, <lt_amount_sga_by_fa>, <lt_amount_sga>.
 
 CLEAR: <ls_data>, <fs_obsstruct>.
-* back_up point CT_DATA
-BREAK BB5827.
+* back_up point CT_DATA or <lt_dataytd>
+BREAK bb5827.
 
 LOOP AT ct_data INTO <ls_data>.
 ASSIGN COMPONENT:
@@ -863,30 +882,39 @@ ASSIGN COMPONENT:
 'VERSION'           OF STRUCTURE <ls_data> TO <l_version>,
 'BU_LINE'           OF STRUCTURE <ls_data> TO <l_bu_line>,
 'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
+'PARTNER'           OF STRUCTURE <ls_data> TO <l_partner>,
 'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
 * get the hours for SKF in driver table <lt_hours_skf> , the amount into another <lt_amount_sga>
- ASSIGN COMPONENT:
-    '/CPMB/IJDP3S6' OF STRUCTURE <fs_obsstruct> TO <l_obs_id>,
-    'PARENTH1'      OF STRUCTURE <fs_obsstruct> TO <l_parenth1>,
-    'PARENTH4'      OF STRUCTURE <fs_obsstruct> TO <l_parenth4>,
-    'PARENTH5'      OF STRUCTURE <fs_obsstruct> TO <l_parenth5>.
 
 CASE <l_figures>.
 WHEN 'HOURS'.
- IF <l_functional_area> = ls_fa_basealloc_2. "SGA999
 
  CASE <l_n_account>(6).
 
- WHEN 'SKF_41'.
+ WHEN 'N2'. "on  43.S090 - collapse on 43.S090 / H4_43_4306
+         CHECK <l_functional_area> <> ls_fa_basealloc_2. "<>SGA999
+         CLEAR: orig_obs, orig_n_account.
+          orig_obs =       <l_obs>.
+          orig_n_account = <l_n_account>.
+         <l_version>     = wa_param_node_sg43_n_2-hashvalue.         "H4_43_4306
+         <l_bu_line>     = l_bu_linetarget. "B101 ( exists B102 for 43.S090)
+         <l_partner>     = orig_obs.
+         <l_obs>         = wa_param_node_sg43_n_2-hashvalue+3(7).
+         CONCATENATE 'SKF_' wa_param_node_sg43_n_2-hashvalue+6(4) INTO <l_n_account>.
+         COLLECT <ls_data> INTO <lt_hours_skf>.
 
-* OBS_GB41_WHAT hours excluded   ? ie. 41_4101 (Support) NO with check
-      CHECK  <l_obs>(2) <> 'H4' AND <l_obs>(2) <> 'H5'.
+ WHEN 'SKF_41'.
+      CHECK <l_n_account> <> 'N2' AND <l_functional_area> = ls_fa_basealloc_2.
+* OBS_GB41_WHAT hours excluded   ? ie. 41_4101 (Support) YES with check
+    CHECK  <l_obs> <> wa_param_obs_gb41_what-hashvalue.
     READ TABLE  <fs_obsdata> INTO <fs_obsstruct> WITH KEY
    ('/CPMB/IJP6PPJ') = <l_n_account>+4(4)
    ('/CPMB/IJPCTQT') = 'HOURS_N1'
    ('/CPMB/CALC') = 'Y'.
-        IF sy-subrc = 0.
+        IF sy-subrc = 0 AND NOT <l_parenth4> IS ASSIGNED.
+         ASSIGN COMPONENT: 'PARENTH4'      OF STRUCTURE <fs_obsstruct> TO <l_parenth4>.
          <l_version> = <l_parenth4>.
+         UNASSIGN: <l_parenth4>.
         ENDIF.
          <l_bu_line> = wa_param_obs_gb41_what-hashvalue.
 *         <l_obs> = <l_obs_id>.
@@ -902,14 +930,17 @@ WHEN 'HOURS'.
 
  WHEN 'SKF_42'.
 
-* OBS_AE42_WHAT hours excluded   ? ie. H4_43_4301 (Support) YES with check
-    CHECK  <l_obs>(2) <> 'H4' AND <l_obs>(2) <> 'H5'.
+      CHECK <l_n_account> <> 'N2' AND <l_functional_area> = ls_fa_basealloc_2.
+* OBS_AE42_WHAT hours excluded   ? ie. 42_4201 (Support) YES with check
+*    CHECK  <l_obs> <> wa_param_obs_ae42_what-hashvalue. " only OBS 42_4201 but SKF_4202,3..
      READ TABLE  <fs_obsdata> INTO <fs_obsstruct> WITH KEY
    ('/CPMB/IJP6PPJ') = <l_n_account>+4(4)
    ('/CPMB/IJPCTQT') = 'HOURS_N1'
    ('/CPMB/CALC') = 'Y'.
-        IF sy-subrc = 0.
+        IF sy-subrc = 0 AND NOT <l_parenth4> IS ASSIGNED.
+         ASSIGN COMPONENT: 'PARENTH4'      OF STRUCTURE <fs_obsstruct> TO <l_parenth4>.
          <l_version> = <l_parenth4>.
+         UNASSIGN: <l_parenth4>.
         ENDIF.
          <l_bu_line> = wa_param_obs_ae42_what-hashvalue.
 *         <l_obs> = <l_obs_id>.
@@ -926,152 +957,161 @@ WHEN 'HOURS'.
 
  WHEN 'SKF_43'.
 
-* OBS_SG43_WHAT_1 excluded   ? ie. H4_43_4301 (Support) NOT excluded with check
-  CHECK  <l_obs> <> wa_param_obs_sg43_what_2-hashvalue. "H5_43_GOV not required in hours
-* H4_4302_4305 is required for HOURS driver if added with 43.S090 but BAS(H4_4302_4305) has no SKF_ in 2020 ...
-* DRIVER 1 numerator => H4_4302_4305 PLUS 43.S090
-* DRIVER 1 denominateur => H4_43_430X_TO_430Y
-* wa_param_obs_sg43_adjust_i-hashvalue = 43.S090
-*  <l_obs> = wa_param_node_sg43_n_1-hashvalue OR "H4_4302_4305
-* DRIVER 2 numerator   => H4_43_4306
-* DRIVER 2 denominator => H4_43_430X_TO_430Y
-*  <l_obs> = wa_param_node_sg43_n_2-hashvalue OR "H4_43_4306
-*  <l_obs> = wa_param_node_sg43_d_1-hashvalue OR "H4_43_430X_TO_430Y
-
-*CLEAR: orig_obs, orig_n_account.
+    ls_dist_skf_n_account-n_account = <l_n_account>.
+    ls_dist_skf_n_account-ctr       = 0.
+    COLLECT ls_dist_skf_n_account INTO lt_dist_skf_n_account.
+* 43.S090 43.S060 not used in HOURS
+    CHECK  <l_obs> <> wa_param_obs_sg43_adjust_i-hashvalue AND <l_obs> <> wa_param_obs_sg43_adjust_i2-hashvalue.
+CLEAR: orig_obs, orig_n_account.
           orig_obs =       <l_obs>.
           orig_n_account = <l_n_account>.
+          IF <l_obs> NE  wa_param_obs_sg43_what_1-hashvalue.
          <l_bu_line> = wa_param_obs_sg43_what_1-hashvalue.
-
+          ENDIF.
          CASE orig_obs.
-         WHEN wa_param_node_sg43_n_1-hashvalue.
-         <l_version> = wa_param_node_sg43_n_1-hashvalue.  "H4_4302_4305 incl in H4_43_430X_TO_430Y
-         WHEN wa_param_obs_sg43_adjust_i-hashvalue.
-         <l_version> = wa_param_obs_sg43_adjust_i-hashvalue. "43.S090
-         WHEN wa_param_node_sg43_n_2-hashvalue.
-         <l_version> = wa_param_node_sg43_n_2-hashvalue.         "H4_43_4306
-         WHEN wa_param_node_sg43_d_1-hashvalue OR wa_param_obs_sg43_what_1-hashvalue. "H4_43_4301 or H4_43_430X_TO_430Y
-         <l_version> = v_key_denom_1.
-         WHEN OTHERS.
-         ENDCASE.
 
+          WHEN wa_param_node_sg43_n_1-hashvalue.            "H4_4302_4305  incl in H4_43_430X_TO_430Y
+          <l_version> = wa_param_node_sg43_n_1-hashvalue.   "H4_4302_4305
+          WHEN wa_param_obs_sg43_addhie_i-hashvalue.        "H5_43_GOV
+          <l_version> = wa_param_node_sg43_n_1-hashvalue.   "H4_4302_4305
+
+          WHEN wa_param_obs_sg43_what_1-hashvalue.          "H4_43_4301
+          IF <l_n_account> <> 'SKF_4306'.
+          <l_version> = wa_param_node_sg43_n_1-hashvalue.   "H4_4302_4305
+          ELSE.
+          <l_version> = wa_param_node_sg43_n_2-hashvalue.   "H4_43_4306
+          ENDIF.
+
+          WHEN wa_param_node_sg43_d_1-hashvalue.            "H4_43_430X_TO_430Y
+          <l_version> = wa_param_node_sg43_n_2-hashvalue.   "H4_43_4306
+
+          WHEN wa_param_obs_sg43_adjust_i-hashvalue.         "43.S090
+          <l_version> = wa_param_obs_sg43_adjust_i-hashvalue."43.S090
+
+          WHEN wa_param_node_sg43_n_2-hashvalue.             "H4_43_4306
+* FYI : only SKF_43XX should be tagged as VERSION = H4_43_4306 - done in next loop
+          IF <l_n_account> = 'SKF_43XX'.
+          <l_version> = wa_param_node_sg43_n_2-hashvalue.    "H4_43_4306
+          ENDIF.
+* v_key_denom_1 defined in line 472
+          WHEN OTHERS.
+          ENDCASE.
+
+* transform SKF_43.. into OBS ex. SKF_4302 = 43_4302
          CONCATENATE <l_n_account>+4(2) <l_n_account>+4(4) INTO <l_obs> SEPARATED BY '_'.
+         <l_partner> = orig_obs.
          COLLECT <ls_data> INTO <lt_hours_skf>.
-
 * sub_total obs example SKF_4302, obs = 43_43
          CONCATENATE <l_n_account>+4(2) <l_n_account>+4(2) INTO <l_obs> SEPARATED BY '_'.
 *keep sub_total 43 OBS member id
          v_sub_tot_obs_43 = <l_obs>.
          CONCATENATE <l_n_account>(6) 'XX' INTO <l_n_account>.
          v_sub_tot_nacc_43 = <l_n_account>.
+         IF orig_obs = wa_param_node_sg43_n_2-hashvalue. " zeroify H4_43_4306, will be replaced by next loop collect
+         <l_signeddata> = 0.
+         ENDIF.
          COLLECT <ls_data> INTO <lt_hours_skf>.
 
- WHEN OTHERS.
- ENDCASE.
- ENDIF. "SGA999
+         WHEN OTHERS.   "<l_n_account>(6) not SKF... or N2
+         ENDCASE.
+
 WHEN 'AMOUNT'.
     CHECK <l_n_account> = 'N2'.
-* temporarily find to limit dataset to 41
-*    FIND REGEX '41' IN <l_obs>.
-*    IF sy-subrc = 0.
+
+* if we wanted to limit dataset to any obs 41
+*    FIND REGEX '41' IN <l_obs>.    IF sy-subrc = 0. ENDIF.
+* we collect the parent OBS and store it in VERSION
+     READ TABLE  <fs_obsdata> INTO <fs_obsstruct> WITH KEY
+   ('/CPMB/IJDP3S6') = <l_obs>.
+        IF sy-subrc = 0 AND NOT <l_parenth4> IS ASSIGNED.
+         ASSIGN COMPONENT: 'PARENTH4'      OF STRUCTURE <fs_obsstruct> TO <l_parenth4>.
+         <l_version> = <l_parenth4>.
+         UNASSIGN: <l_parenth4>.
+        ENDIF.
+* we collect input OBS and store it in BU_LINE
+     READ TABLE  <fs_obsdata> INTO <fs_obsstruct> WITH KEY
+     ('/CPMB/IJPCTQT') = <l_obs>
+     ('/CPMB/CALC')    = 'N'.
+      IF sy-subrc = 0.
+      IF NOT <l_obs_id> IS ASSIGNED. ASSIGN COMPONENT: '/CPMB/IJDP3S6' OF STRUCTURE <fs_obsstruct> TO <l_obs_id>. ENDIF.
+       <l_bu_line> = <l_obs_id>.
+       UNASSIGN: <l_obs_id>.
+      ELSE.
+* per convention .I suffix if OBS = 41_4102 then 41_4102.I except for WHAT
+        CASE <l_obs>.
+        WHEN '41_4101'.   "41_4101
+        <l_bu_line> = '41_4101.I'.
+         WHEN '42_4201'.   "42_4201
+        <l_bu_line> = '42_4201.I'.
+
+        WHEN wa_param_obs_sg43_what_1-hashvalue OR c_43_4301.  "H4_43_4301 or 43_4301
+         <l_bu_line> = '43_4301.I'.
+        WHEN wa_param_obs_sg43_adjust_i-hashvalue.  "43.S090
+         <l_bu_line> = '43_4301.I'.
+        WHEN wa_param_obs_sg43_adjust_i2-hashvalue. "43.S060
+         <l_bu_line> = '43_4301.I'.
+        WHEN wa_param_obs_sg43_addhie_i-hashvalue. "H5_43_GOV (sum of 43.S090 and 43.S060
+         <l_bu_line> = '43_4301.I'.
+
+        WHEN OTHERS.
+         CONCATENATE <l_obs> '.I' INTO <l_bu_line>.
+        ENDCASE.
+      ENDIF.
+
+
       APPEND <ls_data> TO <lt_amount_sga_by_fa>.
-      <l_functional_area> = ls_fa_basealloc_2.
-      COLLECT <ls_data> INTO <lt_amount_sga>.
-*    ENDIF.
+* do the next at validation OBS input member (stored in BU_LINE) step
+*      <l_functional_area> = ls_fa_basealloc_2.
+*      COLLECT <ls_data> INTO <lt_amount_sga>.
+
 WHEN OTHERS.
 ENDCASE.
 ENDLOOP.
-SORT <lt_hours_skf> .
-* back_up point HOURS and AMOUNT_BY_SGA, BY_FA
-BREAK BB5827.
-UNASSIGN:<l_n_account>,<l_measures>,<l_figures>,<l_functional_area>,<l_version>,<l_bu_line>,<l_obs>,<l_signeddata>.
-UNASSIGN: <l_obs_id>,<l_parenth4>,<l_parenth5>,<l_parenth1>.
 
-CLEAR: <ls_data>,<ls_rec>.
-* 43 : make eventual correction to hours add 43.S090 to eventual H4_4302_4305 ie. wa_param_node_sg43_n_1-hashvalue
-LOOP AT <lt_hours_skf> ASSIGNING <ls_data> WHERE ('OBS(2) = c_prefix_43').
+* validate content of AMOUNT internal tables
+LOOP AT <lt_amount_sga_by_fa> INTO <ls_data>.
+
 ASSIGN COMPONENT:
-'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
-'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
-'VERSION'           OF STRUCTURE <ls_data> TO <l_parenth4>,
-'BU_LINE'           OF STRUCTURE <ls_data> TO <l_parenth5>,
-'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
-'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
-
-    IF <l_parenth4> = wa_param_obs_sg43_adjust_i-hashvalue. "43.S090
-    READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
-    ('N_ACCOUNT') = <l_n_account>
-    ('VERSION')   = wa_param_node_sg43_n_1-hashvalue. "H4_4302_4305
-     IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
-      ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
-        <l_signeddata> = <l_signeddata> + <l_signedtotal>.
-        <l_figures>  = c_added_1.
-      UNASSIGN: <l_signedtotal>.
-     ELSE.
-         <l_figures> = c_added_0.
-     ENDIF.
-    ENDIF.
-
-ENDLOOP.
-IF <l_figures> IS ASSIGNED AND <l_parenth4> IS ASSIGNED AND <l_parenth5> IS ASSIGNED AND <l_obs> IS ASSIGNED AND <l_n_account> IS ASSIGNED.
-  UNASSIGN: <l_figures>,<l_parenth4>,<l_parenth5>,<l_obs>,<l_n_account>.
+'BU_LINE'           OF STRUCTURE <ls_data> TO <l_bu_line>,
+'FUNCTIONAL_AREA'   OF STRUCTURE <ls_data> TO <l_functional_area>,
+'OBS'               OF STRUCTURE <ls_data> TO <l_obs>.
+IF <l_bu_line> <> '41.4101' AND <l_bu_line> <> '42.4201'.
+     READ TABLE  <fs_obsdata> INTO <fs_obsstruct> WITH KEY
+     ('/CPMB/IJDP3S6') = <l_bu_line>
+     ('/CPMB/CALC')    = 'N'.
+      IF sy-subrc = 0.
+* BAS(H4_43_4306) = BAS (43_4306)
+      IF <l_obs> = wa_param_node_sg43_n_2-hashvalue. <l_obs> = <l_obs>+3(7).ENDIF. "H4_43_4306 > 43_4306
+      APPEND <ls_data> TO <lt_amount_sga_by_fab>.
+      <l_functional_area> = ls_fa_basealloc_2.
+      COLLECT <ls_data> INTO <lt_amount_sga>.
+      ENDIF.
+ELSE.
+      APPEND <ls_data> TO <lt_amount_sga_by_fab>.
+      <l_functional_area> = ls_fa_basealloc_2.
+      COLLECT <ls_data> INTO <lt_amount_sga>.
 ENDIF.
-  IF <l_signeddata> IS ASSIGNED.
-  UNASSIGN: <l_signeddata>.
-  ENDIF.
-  IF <l_signedtotal> IS ASSIGNED.
-  UNASSIGN: <l_signedtotal>.
-  ENDIF.
-*end correction to HOURS in 43
-* back_up point HOURS_CORRECTED
-BREAK BB5827.
-* sync internal table without any pointers
+ENDLOOP.
+* back_up AMOUNT tables <lt_amount_sga> and <lt_amount_sga_by_fab>
+BREAK bb5827.
+* sync internal table pointers
+
+REFRESH:<lt_amount_sga_by_fa>.
+<lt_amount_sga_by_fa> = <lt_amount_sga_by_fab>.
+*REFRESH:<lt_amount_sga_by_fab>.
+* keep only required percentages
+CLEAR: wa_strg.
+CONCATENATE 'VERSION(2) EQ ''' c_prefix_h4  '''' INTO wa_strg.
+CONCATENATE wa_strg ` ` 'AND OBS(2) NE ''' c_prefix_43  '''' INTO wa_strg.
+DELETE <lt_hours_skf> WHERE (wa_strg).
+* sync hours internal table without any pointers (shorter than un-assign pointers)
+REFRESH: <lt_perc_skf>.
 <lt_perc_skf> = <lt_hours_skf>.
 REFRESH: <lt_hours_skf>.
-<lt_hours_skf> = <lt_perc_skf>.
-
-* 43: compute relative percentage
-LOOP AT <lt_hours_skf> ASSIGNING <ls_data> WHERE ('OBS(2) = c_prefix_43').
-ASSIGN COMPONENT:
-'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
-'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
-'VERSION'           OF STRUCTURE <ls_data> TO <l_parenth4>,
-'BU_LINE'           OF STRUCTURE <ls_data> TO <l_parenth5>,
-'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
-'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
-
-    READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
-    ('VERSION')   = <l_parenth4>
-    ('N_ACCOUNT') = v_sub_tot_nacc_43
-    ('OBS')       = v_sub_tot_obs_43.
-        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
-        ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
-        <l_signeddata> = <l_signeddata> / <l_signedtotal>.
-        <l_figures> = c_selector_perc.
-        UNASSIGN: <l_signedtotal>.
-        ELSE.
-        ENDIF.
-ENDLOOP.
-IF <l_figures> IS ASSIGNED AND <l_parenth4> IS ASSIGNED AND <l_parenth5> IS ASSIGNED AND <l_obs> IS ASSIGNED AND <l_n_account> IS ASSIGNED.
-  UNASSIGN: <l_figures>,<l_parenth4>,<l_parenth5>,<l_obs>,<l_n_account>.
-ENDIF.
-  IF <l_signeddata> IS ASSIGNED.
-  UNASSIGN: <l_signeddata>.
-  ENDIF.
-  IF <l_signedtotal> IS ASSIGNED.
-  UNASSIGN: <l_signedtotal>.
-  ENDIF.
-* sync internal table without any pointers
-<lt_perc_skf> = <lt_hours_skf>.
-REFRESH: <lt_hours_skf>.
-* 43: end relative percentage
-* back_up point PERECENTAGE_MIX
-  BREAK-POINT.
 <lt_hours_skf> = <lt_perc_skf>.
 REFRESH: <lt_perc_skf>.
-
-* 41,42: relative percentage + 43: compute ratio
-LOOP AT <lt_hours_skf> ASSIGNING <ls_data>.
+* 41,42: relative percentage + 43: compute cumulative percentage ratio
+LOOP AT <lt_hours_skf> ASSIGNING <ls_data> WHERE ('BU_LINE(2) <>  c_prefix_43').
 ASSIGN COMPONENT:
 'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
 'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
@@ -1082,7 +1122,7 @@ ASSIGN COMPONENT:
 
   CASE <l_obs>(2).
   WHEN '41'.
-
+    CHECK <l_obs> <> v_sub_tot_obs_41. "41_41
     READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
     ('OBS')         = v_sub_tot_obs_41
     ('VERSION')     = <l_parenth4>. "41_41XX
@@ -1094,7 +1134,7 @@ ASSIGN COMPONENT:
     ENDIF.
     UNASSIGN: <l_signedtotal>.
   WHEN '42'.
-
+    CHECK <l_obs> <> v_sub_tot_obs_42.
     READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
     ('OBS')         = v_sub_tot_obs_42
     ('VERSION')     = <l_parenth4>. "42_42XX
@@ -1106,87 +1146,299 @@ ASSIGN COMPONENT:
     ENDIF.
     UNASSIGN: <l_signedtotal>.
 
-  WHEN '43'.
-* Backup_point for PERCENTAGE
-BREAK BB5827.
-  IF <l_parenth4> = wa_param_obs_sg43_adjust_i-hashvalue. "43.S090
-* compute first driver: divide by H4_43_430X_TO_430Y_H4_43_4301
-
-    READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
-    ('N_ACCOUNT') = <l_n_account>
-    ('VERSION')   = v_key_denom_1. "H4_43_430X_TO_430Y_H4_43_4301
-
-        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
-        ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
-        <l_signeddata> = <l_signeddata> * <l_signedtotal>.
-        <l_figures> = c_selector_hours_n1.
-        UNASSIGN: <l_signedtotal>.
-        ELSE.
-        ENDIF.
-
-* compute second driver HOURS_N2
-    ELSEIF <l_parenth4> = wa_param_node_sg43_n_2-hashvalue. "H4_43_4306
-    READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
-    ('N_ACCOUNT') = <l_n_account>
-    ('VERSION')   =  v_key_denom_1. "H4_43_430X_TO_430Y_H4_43_4301
-
-        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
-        ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
-        <l_signeddata> = <l_signeddata> * <l_signedtotal>.
-        <l_figures> = c_selector_hours_n2.
-        UNASSIGN: <l_signedtotal>.
-        ELSE.
-        ENDIF.
-* rename in any case figures as HOURS_N2
-        <l_figures> = c_numerator_2. "HOURS_N2
-
-    ENDIF.
+  WHEN OTHERS.
   ENDCASE.
-  IF <l_figures> IS ASSIGNED AND <l_parenth4> IS ASSIGNED AND <l_parenth5> IS ASSIGNED AND <l_obs> IS ASSIGNED AND <l_n_account> IS ASSIGNED.
-  UNASSIGN: <l_figures>,<l_parenth4>,<l_parenth5>,<l_obs>, <l_n_account>.
-  ENDIF.
-  IF <l_signedtotal> IS ASSIGNED.
-  UNASSIGN: <l_signedtotal>.
-  ENDIF.
+
 ENDLOOP.
-* sync internal table without any pointers
+* keep only required percentages
+CLEAR: wa_strg.
+CONCATENATE 'OBS EQ ''' v_sub_tot_obs_41  '''' INTO wa_strg.
+CONCATENATE wa_strg ` ` 'OR OBS EQ ''' v_sub_tot_obs_42  '''' INTO wa_strg.
+CONCATENATE wa_strg ` ` 'AND FIGURES EQ ''' c_selector_hours  '''' INTO wa_strg.
+DELETE <lt_hours_skf> WHERE (wa_strg).
+* sync
+REFRESH: <lt_perc_skf>.
 <lt_perc_skf> = <lt_hours_skf>.
 REFRESH: <lt_hours_skf>.
-<lt_hours_skf> = <lt_perc_skf> .
+<lt_hours_skf> = <lt_perc_skf>.
+REFRESH: <lt_perc_skf>.
+* keep only 41 and 42 in <lt_perc_skf>
+IF NOT <ls_data> IS ASSIGNED.
+ASSIGN ls_rec->* TO <ls_data>.
+ENDIF.
+LOOP AT <lt_hours_skf> INTO <ls_data> WHERE ('FIGURES = c_selector_perc').
+ APPEND <ls_data> TO <lt_perc_skf>.
+ENDLOOP.
 
-* sync internal table pointers
-<lt_amount_sga_by_fab> = <lt_amount_sga_by_fa>.
-REFRESH:<lt_amount_sga_by_fa>.
-<lt_amount_sga_by_fa> = <lt_amount_sga_by_fab>.
-BREAK-POINT.
-* create write-off records and percentage per functional area
-LOOP AT <lt_amount_sga_by_fa> ASSIGNING <ls_data>.
+* collapse H4_4302_4305
+CLEAR: wa_strg.
+CONCATENATE 'VERSION EQ ''' wa_param_node_sg43_n_1-hashvalue  '''' INTO wa_strg.
+CONCATENATE wa_strg ` ` 'AND N_ACCOUNT NE ''' 'SKF_4306'  '''' INTO wa_strg.
+CONCATENATE wa_strg ` ` 'AND N_ACCOUNT NE ''' 'SKF_43XX'  '''' INTO wa_strg.
+
+LOOP AT <lt_hours_skf> INTO <ls_data> WHERE (wa_strg). "H4_4302_4305
+*LOOP AT <lt_hours_skf> ASSIGNING <ls_data> WHERE ('VERSION =  wa_param_node_sg43_n_1-hashvalue'). "H4_4302_4305
+ASSIGN COMPONENT:
+'PARTNER'           OF STRUCTURE <ls_data> TO <l_partner>,
+'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
+'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
+'VERSION'           OF STRUCTURE <ls_data> TO <l_parenth4>,
+'BU_LINE'           OF STRUCTURE <ls_data> TO <l_parenth5>,
+'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
+'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+
+         CLEAR: orig_obs, orig_n_account.
+          orig_obs =       <l_obs>.
+          orig_n_account = <l_n_account>.
+
+    <l_bu_line> = wa_param_obs_sg43_what_1-hashvalue.
+    <l_partner> = <l_parenth4>.
+    COLLECT <ls_data> INTO <lt_perc_skf>.
+
+    CONCATENATE <l_n_account>(6) 'XX' INTO <l_n_account>.
+    <l_obs> = wa_param_node_sg43_n_1-hashvalue.
+    COLLECT <ls_data> INTO <lt_perc_skf>.
+
+ENDLOOP.
+
+* collapse H4_43_4306 and save 43.S090
+CLEAR: wa_strg.
+CONCATENATE 'VERSION EQ ''' wa_param_node_sg43_n_2-hashvalue  '''' INTO wa_strg. "H4_43_4306
+CONCATENATE wa_strg ` ` 'AND N_ACCOUNT EQ ''' 'SKF_4306'  '''' INTO wa_strg.
+CONCATENATE wa_strg ` ` 'AND OBS EQ ''' '43_4306'  '''' INTO wa_strg.
+
+LOOP AT <lt_hours_skf> INTO <ls_data> WHERE (wa_strg).
+*LOOP AT <lt_hours_skf> INTO <ls_data> WHERE ('VERSION =  wa_param_node_sg43_n_2-hashvalue'). "H4_43_4306
+ASSIGN COMPONENT:
+'PARTNER'           OF STRUCTURE <ls_data> TO <l_partner>,
+'FUNCTIONAL_AREA'   OF STRUCTURE <ls_data> TO <l_functional_area>,
+'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
+'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
+'VERSION'           OF STRUCTURE <ls_data> TO <l_parenth4>,
+'BU_LINE'           OF STRUCTURE <ls_data> TO <l_parenth5>,
+'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
+'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+*CHECK <l_n_account> = 'SKF_4306' AND orig_obs = '43_4306'.
+         CLEAR: orig_obs, orig_n_account.
+          orig_obs       = <l_obs>.
+          orig_n_account = <l_n_account>.
+          orig_partner   = <l_partner>.
+
+    <l_bu_line> = wa_param_obs_sg43_what_1-hashvalue.
+    <l_partner> = <l_parenth4>.
+    <l_functional_area> = ls_fa_basealloc_2. "SGA999
+    <l_obs> = wa_param_node_sg43_n_2-hashvalue.
+    <l_n_account> = v_sub_tot_nacc_43.       "SKF_43XX
+    COLLECT <ls_data> INTO <lt_perc_skf>.
+ IF orig_partner <> wa_param_obs_sg43_adjust_i-hashvalue. "43.S090
+    <l_n_account> = orig_n_account.
+    <l_bu_line> = wa_param_obs_sg43_what_1-hashvalue.
+    <l_partner> = v_key_denom_1.
+    <l_functional_area> = ls_fa_basealloc_2. "SGA999
+    COLLECT <ls_data> INTO <lt_perc_skf>.
+ ELSE.   "=43.S090
+ <l_n_account> = orig_n_account. "43_4306
+ <l_obs> = wa_param_obs_sg43_adjust_i-hashvalue.
+ APPEND <ls_data> TO <lt_perc_skf>.
+
+ ENDIF.
+ENDLOOP.
+
+IF NOT <ls_data> IS ASSIGNED.
+ASSIGN ls_rec->* TO <ls_data>.
+ENDIF.
+* add H4_4302_4305 TO H4_43_4306 on SKF_43XX / H4_43_4306 and add 43.S090 to get H4_4302_4305_+_43.S090
+CLEAR: wa_strg.
+CONCATENATE 'OBS EQ ''' wa_param_node_sg43_n_1-hashvalue  '''' INTO wa_strg. "H4_4302_4305
+
+*LOOP AT <lt_perc_skf> INTO <ls_data> WHERE ('OBS =  wa_param_node_sg43_n_1-hashvalue'). "H4_4302_4305
+LOOP AT <lt_perc_skf> INTO <ls_data> WHERE (wa_strg).
+    ASSIGN COMPONENT:
+    'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
+    'PARTNER'           OF STRUCTURE <ls_data> TO <l_partner>,
+    'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
+    'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+    CHECK <l_partner> <> v_numer_1 AND <l_partner> <> v_numer_2. "avoid infinite append
+    CLEAR: orig_amount.
+    orig_amount = <l_signeddata>.
+
+    READ TABLE <lt_perc_skf> INTO <ls_rec> WITH KEY
+    ('OBS')         =  wa_param_node_sg43_n_2-hashvalue "H4_43_4306
+    ('N_ACCOUNT')   =  v_sub_tot_nacc_43.               "SKF_43XX
+        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
+        ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
+        <l_obs>        = wa_param_node_sg43_n_2-hashvalue.
+        <l_signeddata> = <l_signeddata> + <l_signedtotal>.
+        <l_partner>    = v_numer_1.          "H4_4302_4305_&_H4_43_4306
+        APPEND <ls_data> TO <lt_perc_skf>.
+        UNASSIGN: <l_signedtotal>.
+        ELSE.
+        ENDIF.
+    READ TABLE <lt_perc_skf> INTO <ls_rec> WITH KEY
+    ('OBS')         =  wa_param_obs_sg43_adjust_i-hashvalue. "43.S090
+        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
+        ASSIGN COMPONENT:
+        'N_ACCOUNT'  OF STRUCTURE <ls_rec> TO <l_new_n_acc>,
+        'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
+        <l_n_account>  = <l_new_n_acc>.
+        <l_obs>        = v_numer_2. "H4_4302_4305_+_43.S090
+        <l_signeddata> = orig_amount     + <l_signedtotal>.
+        <l_partner>    = wa_param_obs_sg43_adjust_i-hashvalue.
+        APPEND <ls_data> TO <lt_perc_skf>.
+        UNASSIGN: <l_signedtotal>.
+        ELSE.
+        ENDIF.
+ENDLOOP.
+
+* sync hours internal table without any pointers (shorter than un-assign pointers)
+REFRESH: <lt_hours_skf>.
+<lt_hours_skf> = <lt_perc_skf>.
+REFRESH: <lt_perc_skf>.
+* 43: compute relative percentage for SKF_43..vs H4_4302_4305 and 43_4306 vs H4_43_4306
+LOOP AT <lt_hours_skf> ASSIGNING <ls_data> WHERE ('N_ACCOUNT <>  v_sub_tot_nacc_43').
+ASSIGN COMPONENT:
+'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
+'PARTNER'           OF STRUCTURE <ls_data> TO <l_partner>,
+'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
+'VERSION'           OF STRUCTURE <ls_data> TO <l_parenth4>,
+'BU_LINE'           OF STRUCTURE <ls_data> TO <l_parenth5>,
+'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
+'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+CASE <l_obs>(2).
+WHEN c_prefix_43.
+    READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
+    ('OBS')       =  wa_param_node_sg43_n_1-hashvalue. "H4_4302_4305
+        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
+        ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
+        <l_signeddata> = <l_signeddata> / <l_signedtotal>.
+        <l_figures> = c_selector_perc.
+        UNASSIGN: <l_signedtotal>.
+        ELSE.
+        ENDIF.
+WHEN c_prefix_h4.
+
+    IF <l_partner> = v_key_denom_1. "H4_43_430X_TO_430Y_&_H4_43_4301
+    READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
+    ('PARTNER')   = v_numer_1                         "H4_4302_4305_&_H4_4306
+    ('N_ACCOUNT') = v_sub_tot_nacc_43                 "SKF_43XX
+    ('OBS')       = wa_param_node_sg43_n_2-hashvalue. "H4_43_4306
+        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
+        ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
+        <l_obs> = wa_param_node_sg43_n_2-hashvalue+3(7). "added emergency
+        <l_signeddata> = <l_signeddata> / <l_signedtotal>.
+        <l_figures> = c_selector_perc.
+        UNASSIGN: <l_signedtotal>.
+        ELSE.
+        ENDIF.
+
+    ELSEIF <l_partner> = wa_param_obs_sg43_adjust_i-hashvalue . "43.S090
+    READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
+    ('PARTNER')   =  v_numer_1                         "H4_4302_4305_&_H4_4306
+    ('N_ACCOUNT') =  v_sub_tot_nacc_43
+    ('OBS')       =  wa_param_node_sg43_n_2-hashvalue. "H4_43_4306
+        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
+        ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
+        <l_signeddata> =   <l_signeddata> / <l_signedtotal>.
+        <l_figures> = c_selector_perc.
+        UNASSIGN: <l_signedtotal>.
+        ELSE.
+        ENDIF.
+
+
+    ENDIF.
+
+ENDCASE.
+ENDLOOP.
+* keep only percentages
+CLEAR: wa_strg.
+CONCATENATE 'FIGURES NE ''' c_selector_perc  '''' INTO wa_strg.
+DELETE <lt_hours_skf> WHERE (wa_strg).
+
+* second round except for SKF_4306 / H4_43_4306
+LOOP AT <lt_hours_skf> ASSIGNING <ls_data> WHERE ('PARTNER = wa_param_node_sg43_n_1-hashvalue'). "H4_4302_4305
+ASSIGN COMPONENT:
+'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
+'PARTNER'           OF STRUCTURE <ls_data> TO <l_partner>,
+'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
+'VERSION'           OF STRUCTURE <ls_data> TO <l_parenth4>,
+'BU_LINE'           OF STRUCTURE <ls_data> TO <l_parenth5>,
+'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
+'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+    READ TABLE <lt_hours_skf> INTO <ls_rec> WITH KEY
+    ('FIGURES')   = c_selector_perc                         "PERCENTAGE
+    ('OBS')       = v_numer_2.                              "H4_4302_4305_+_43.S090
+        IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
+        ASSIGN COMPONENT: 'SIGNEDDATA' OF STRUCTURE <ls_rec> TO <l_signedtotal>.
+        <l_signeddata> = <l_signeddata> * <l_signedtotal>.
+        <l_figures> = c_selector_perc.
+        UNASSIGN: <l_signedtotal>.
+        ELSE.
+       ENDIF.
+ENDLOOP.
+
+* keep only required percentages
+CLEAR: wa_strg.
+CONCATENATE 'OBS EQ ''' v_numer_2  '''' INTO wa_strg.
+DELETE <lt_hours_skf> WHERE (wa_strg).
+CLEAR: wa_strg.
+CONCATENATE 'OBS EQ ''' wa_param_obs_sg43_adjust_i-hashvalue  '''' INTO wa_strg.
+DELETE <lt_hours_skf> WHERE (wa_strg).
+
+* sync hours internal table without any pointers (shorter than un-assign pointers)
+REFRESH: <lt_perc_skf>.
+<lt_perc_skf> = <lt_hours_skf>.
+
+LOOP AT <lt_perc_skf> ASSIGNING <ls_rec>.
+ASSIGN COMPONENT:
+'OBS'     OF STRUCTURE <ls_rec> TO <l_obs>,
+'VERSION' OF STRUCTURE <ls_rec> TO <l_version>.
+
+        UNASSIGN: <l_bu_line>.
+READ TABLE <lt_amount_sga> INTO <ls_data> WITH KEY
+    ('OBS')       = <l_obs>.
+        IF sy-subrc = 0 AND NOT <l_bu_line> IS ASSIGNED.
+        ASSIGN COMPONENT: 'BU_LINE' OF STRUCTURE <ls_data> TO <l_bu_line>.
+           <l_version> = <l_bu_line>.
+        UNASSIGN: <l_bu_line>.
+        ELSE.
+       ENDIF.
+ENDLOOP.
+
+* back_up point PERCENTAGE table <lt_perc_skf>
+REFRESH: <lt_hours_skf>.
+<lt_hours_skf> = <lt_perc_skf>.
+BREAK bb5827.
+* create 41, 42 write-off records and percentage per functional area
+CLEAR: wa_strg.
+CONCATENATE 'OBS EQ ''' wa_param_obs_gb41_what-hashvalue  '''' INTO wa_strg. "41_4101
+CONCATENATE wa_strg ` ` 'OR OBS EQ ''' wa_param_obs_ae42_what-hashvalue  '''' INTO wa_strg. "42_4201
+
+LOOP AT <lt_amount_sga_by_fa> ASSIGNING <ls_data> WHERE (wa_strg).
 ASSIGN COMPONENT:
 'MEASURES'          OF STRUCTURE <ls_data> TO <l_measures>,
 'FUNCTIONAL_AREA'   OF STRUCTURE <ls_data> TO <l_functional_area>,
 'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
 'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
 'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
-* adjust when SG43 ready
-CHECK <l_figures> <>  c_selector_woff AND
-( <l_obs> =  wa_param_obs_gb41_what-hashvalue
-OR <l_obs> = wa_param_obs_ae42_what-hashvalue
-OR <l_obs> = wa_param_obs_sg43_what_1-hashvalue
-OR <l_obs> = wa_param_obs_sg43_what_2-hashvalue ).
-* AND <l_figures> <> c_selector_perc ).
+
+CHECK <l_figures> <>  c_selector_woff AND <l_figures> <>  c_selector_perc.
+
 * save the amount to write-off for 41/2_01
  <l_figures>    = c_selector_woff.
  <l_measures>   = c_periodic.
  <l_signeddata> = <l_signeddata> * -1.
 ENDLOOP.
 
-* sync internal table pointers
-<lt_amount_sga_by_fab> = <lt_amount_sga_by_fa>.
-REFRESH:<lt_amount_sga_by_fa>.
-<lt_amount_sga_by_fa> = <lt_amount_sga_by_fab>.
-BREAK BB5827.
-LOOP AT <lt_amount_sga_by_fa> ASSIGNING <ls_data>
- WHERE  ('FIGURES = c_selector_woff').
+* 41, 42 allocation have only one scope
+CLEAR: wa_strg.
+CONCATENATE 'OBS EQ ''' wa_param_obs_gb41_what-hashvalue  '''' INTO wa_strg. "41_4101
+CONCATENATE wa_strg ` ` 'OR OBS EQ ''' wa_param_obs_ae42_what-hashvalue  '''' INTO wa_strg. "42_4201
+*CONCATENATE wa_strg ` ` 'OR OBS EQ ''' wa_param_obs_sg43_what_1-hashvalue  '''' INTO wa_strg. "H4_43_4301
+*CONCATENATE wa_strg ` ` 'OR OBS EQ ''' wa_param_obs_sg43_addhie_i-hashvalue  '''' INTO wa_strg. "H5_43_GOV
+CONCATENATE wa_strg ` ` 'AND FIGURES EQ ''' c_selector_woff  '''' INTO wa_strg. "H5_43_GOV
+
+LOOP AT <lt_amount_sga_by_fa> ASSIGNING <ls_data> WHERE (wa_strg).
+
 ASSIGN COMPONENT:
 'BU_LINE'           OF STRUCTURE <ls_data> TO <l_bu_line>,
 'SMART'             OF STRUCTURE <ls_data> TO <l_smart>,
@@ -1200,15 +1452,19 @@ ASSIGN COMPONENT:
 'MEASURES'          OF STRUCTURE <ls_data> TO <l_measures>,
 'VERSION'           OF STRUCTURE <ls_data> TO <l_version>,
 'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
-     CLEAR: orig_amount, <ls_rec>.
+*CHECK <l_figures> = c_selector_woff.
+     CLEAR: orig_amount, orig_obs, <ls_rec>.
 * back_up writeoff line
      <ls_rec> = <ls_data>.
+     orig_obs    = <l_bu_line>.
      orig_amount = <l_signeddata>.
 * BU_LINE was used as placeholder for Support related to profitable Bus Area OBS
-    LOOP AT <lt_hours_skf> ASSIGNING <ls_hours_perc> WHERE ('BU_LINE = <l_obs>').
+    LOOP AT <lt_perc_skf> ASSIGNING <ls_hours_perc> WHERE ('BU_LINE = <l_obs>').
+
          ASSIGN COMPONENT:
+
      'FIGURES'    OF STRUCTURE <ls_hours_perc> TO <l_percentage>,
-     'OBS'        OF STRUCTURE <ls_hours_perc> TO <l_newobs>,
+     'VERSION'        OF STRUCTURE <ls_hours_perc> TO <l_newobs>,
      'SIGNEDDATA' OF STRUCTURE <ls_hours_perc> TO <l_perc_skf>.
      CHECK <l_percentage> = c_selector_perc.
      CLEAR: skf_fa_perc, gst_fahier.
@@ -1230,16 +1486,11 @@ ASSIGN COMPONENT:
         ELSE.
         <l_smart> = l_o_smarttarget. "'62695'.
         ENDIF.
-     <l_obs> = <l_newobs>.
+
 *Look-up in OBS BPC master data table to post on .I OBS base member attached to OBS node to allocate
-* selecting obs input member via property 'ALLOC_RULE') = <l_newobs>.
-    ASSIGN COMPONENT '/CPMB/IJDP3S6' OF STRUCTURE <fs_obsstruct> TO <l_obs_input>.
-    READ TABLE  <fs_obsdata> INTO <fs_obsstruct> WITH KEY
-   ('/CPMB/IJPCTQT') = <l_newobs>
-   ('/CPMB/CALC') = 'N'.
-        IF sy-subrc = 0.
-        <l_obs>         = <l_obs_input>.
-        ENDIF.
+* obs input member was stored in <l_bu_line>.
+
+        <l_obs>         = <l_newobs>.
         <l_bu_line>     = l_bu_linetarget.
         <l_datasrc>     = l_datasrctarget.
         <l_version>     = l_versiontarget.
@@ -1248,16 +1499,17 @@ ASSIGN COMPONENT:
         <l_product>     = l_producttarget.
         <l_figures>     = l_figurestarget.
         <l_measures>    = c_periodic .
+
         APPEND <ls_data> TO <lt_amount_sga_by_fa>.
       ENDIF.
 
-* restore original writeoff line and adjust base target members for posting
+* restore original write-off line and adjust base target members for posting
      <ls_data> = <ls_rec>.
-     CONCATENATE <l_obs> c_input_suf INTO <l_obs>.
+        <l_obs>         = orig_obs.
         <l_bu_line>     = l_bu_linetarget.
         <l_datasrc>     = l_datasrctarget.
         <l_version>     = l_versiontarget.
-        <l_n_account>   = l_n_accounttarget.
+        <l_n_account>   = l_n_accounttarget. "43 SCOPE II is : l_n_accounttarget2
         <l_partner>     = l_partnertarget.
         <l_product>     = l_producttarget.
         <l_figures>     = l_figurestarget.
@@ -1283,30 +1535,246 @@ ASSIGN COMPONENT:
         ENDIF.
   ENDLOOP.
 ENDLOOP.
-BREAK-POINT.
 
-UNASSIGN: <l_bu_line>,<l_smart>,<l_datasrc>,<l_n_account>,<l_partner>,<l_product>,<l_figures>,
-          <l_functional_area>,<l_obs>,<l_measures>,<l_time>,<l_version>,<l_signed_data>.
-UNASSIGN: <l_percentage>,<l_perc_skf>,<l_newobs>.
-UNASSIGN: <l_obs_input>.
+REFRESH: <lt_perc_skf>.
+<lt_perc_skf> = <lt_hours_skf>.
+
+* 43 allocation scope 1 - 43_4301 = H5_43_GOV (43.S060 + 43.S090) + H4_43_4301 (43_4301 exl. 43.S090 and 43.S060)
+* 43_4301 added via *XDIM_ADDMEMBERSET OBS = 43_4301
+CLEAR: wa_strg.
+CONCATENATE wa_strg ` ` 'OBS EQ ''' c_43_4301  '''' INTO wa_strg.                                "43_4301
+CONCATENATE wa_strg ` ` 'OR OBS EQ ''' wa_param_obs_sg43_adjust_i-hashvalue  '''' INTO wa_strg.  "43.S090
+CONCATENATE wa_strg ` ` 'OR OBS EQ ''' wa_param_obs_sg43_adjust_i2-hashvalue  '''' INTO wa_strg. "43.S060
+CONCATENATE wa_strg ` ` 'OR OBS EQ ''' wa_param_obs_sg43_what_1-hashvalue  '''' INTO wa_strg.    "H4_43_4301
+* back up AMOUNT for 41,42 select on DATASRC = HQ_DEST
+BREAK BB5827.
+REFRESH: <lt_amount_sga_by_fab>, <lt_amount_sga>.
+LOOP AT <lt_amount_sga_by_fa> ASSIGNING <ls_data> WHERE (wa_strg).
+ASSIGN COMPONENT:
+'BU_LINE'           OF STRUCTURE <ls_data> TO <l_bu_line>,
+'SMART'             OF STRUCTURE <ls_data> TO <l_smart>,
+'DATASRC'           OF STRUCTURE <ls_data> TO <l_datasrc>,
+'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
+'PARTNER'           OF STRUCTURE <ls_data> TO <l_partner>,
+'PRODUCT'           OF STRUCTURE <ls_data> TO <l_product>,
+'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
+'FUNCTIONAL_AREA'   OF STRUCTURE <ls_data> TO <l_functional_area>,
+'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
+'MEASURES'          OF STRUCTURE <ls_data> TO <l_measures>,
+'VERSION'           OF STRUCTURE <ls_data> TO <l_version>,
+'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+
+     CLEAR: orig_obs.
+          orig_obs    = <l_obs>.
+
+     IF NOT <ls_rec> IS ASSIGNED.
+     ASSIGN ls_rec2->* TO <ls_rec>.
+     ELSE.
+     CLEAR: <ls_rec>.
+     ENDIF.
+     <ls_rec> = <ls_data>.
+IF orig_obs = '43_4301'. "H4_43_4301.
+
+     CLEAR: orig_amount.
+     orig_amount = <l_signeddata>.
+* BU_LINE was used as placeholder for Support related to profitable Bus Area OBS
+*   LOOP AT <lt_perc_skf> ASSIGNING <ls_hours_perc> WHERE ('BU_LINE = <l_obs>').
+   LOOP AT <lt_perc_skf> ASSIGNING <ls_hours_perc> WHERE ('BU_LINE = wa_param_obs_sg43_what_1-hashvalue'). "H4_43_4301
+      IF sy-subrc = 0 AND NOT <l_newobs> IS ASSIGNED AND NOT <l_perc_skf> IS ASSIGNED.
+      ASSIGN COMPONENT:
+     'VERSION'        OF STRUCTURE <ls_hours_perc> TO <l_newobs>,
+     'SIGNEDDATA' OF STRUCTURE <ls_hours_perc> TO <l_perc_skf>.
+
+     CLEAR: skf_fa_perc, gst_fahier.
+            skf_fa_perc     =  ( orig_amount * <l_perc_skf> ).
+        <l_signeddata>  = skf_fa_perc.
+      READ TABLE gtt_fahier INTO gst_fahier WITH KEY ('MEMBER') = <l_functional_area>.
+      IF sy-subrc = 0.
+         IF  gst_fahier-parent     = l_fa_node_def
+         OR  gst_fahier-parent_lv1 = l_fa_node_def
+         OR  gst_fahier-parent_lv2 = l_fa_node_def
+         OR  gst_fahier-parent_lv3 = l_fa_node_def
+         OR  gst_fahier-parent_lv4 = l_fa_node_def
+         OR  gst_fahier-parent_lv5 = l_fa_node_def
+         OR  gst_fahier-parent_lv6 = l_fa_node_def
+         OR  gst_fahier-parent_lv7 = l_fa_node_def
+         OR  gst_fahier-parent_lv8 = l_fa_node_def
+         OR  gst_fahier-parent_lv9 = l_fa_node_def.
+         <l_smart> = l_s_smarttarget. "'62694'.
+        ELSE.
+        <l_smart> = l_o_smarttarget. "'62695'.
+        ENDIF.
+      ENDIF.
+
+        <l_obs>         = <l_newobs>.
+        <l_bu_line>     = l_bu_linetarget.
+        <l_datasrc>     = l_datasrctarget.
+        <l_version>     = l_versiontarget.
+
+        <l_partner>     = l_partnertarget.
+        <l_product>     = l_producttarget.
+        <l_figures>     = l_figurestarget.
+        <l_measures>    = c_periodic.
+
+        IF <l_obs> <> '43_4306.I'.
+        <l_n_account>   = l_n_accounttarget.
+        ELSE.
+        <l_n_account>   = l_n_accounttarget2.
+        ENDIF.
+
+        APPEND <ls_data> TO <lt_amount_sga_by_fab>.
+
+     UNASSIGN: <l_newobs>, <l_perc_skf>.
+     ELSE.
 
 
-CLEAR wa_strg.
-CONCATENATE 'MEASURES NE ''' c_periodic  '''' INTO wa_strg.
+     ENDIF.
+    ENDLOOP.
+*  write off 43.S060 & 43.S090
+ELSE. "not orig_obs = '43_4301'.
+* save the amount to write-off for 43
+ <l_figures>    = c_selector_woff.
+ <l_measures>   = c_periodic.
+ <l_signeddata> = <l_signeddata> * -1.
+
+            READ TABLE gtt_fahier INTO gst_fahier WITH KEY ('MEMBER') = <l_functional_area>.
+            IF sy-subrc = 0.
+             IF  gst_fahier-parent     = l_fa_node_def
+                OR  gst_fahier-parent_lv1 = l_fa_node_def
+                OR  gst_fahier-parent_lv2 = l_fa_node_def
+                OR  gst_fahier-parent_lv3 = l_fa_node_def
+                OR  gst_fahier-parent_lv4 = l_fa_node_def
+                OR  gst_fahier-parent_lv5 = l_fa_node_def
+                OR  gst_fahier-parent_lv6 = l_fa_node_def
+                OR  gst_fahier-parent_lv7 = l_fa_node_def
+                OR  gst_fahier-parent_lv8 = l_fa_node_def
+                OR  gst_fahier-parent_lv9 = l_fa_node_def.
+             <l_smart>        = l_s_smarttarget. "'62694'.
+             ELSE.
+             <l_smart>        = l_o_smarttarget. "'62695'.
+             ENDIF.
+            ENDIF.
+             <l_measures>    = c_periodic.
+             <l_bu_line>     = l_bu_linetarget.
+             <l_datasrc>     = l_datasrctarget.
+             <l_version>     = l_versiontarget.
+             <l_n_account>   = l_n_accounttarget2.
+             <l_partner>     = l_partnertarget.
+             <l_product>     = l_producttarget.
+             <l_figures>     = l_figurestarget.
+            IF orig_obs = wa_param_obs_sg43_what_1-hashvalue.   "H4_43_4301
+             <l_n_account>   = l_n_accounttarget.
+             CONCATENATE wa_param_obs_sg43_what_1-hashvalue+3(7) '.I' INTO <l_obs>.
+            ELSE.
+             <l_n_account>   = l_n_accounttarget2.
+            ENDIF.
+        APPEND <ls_data> TO <lt_amount_sga_by_fab>.
+
+ENDIF.
+ENDLOOP.
+
+REFRESH: <lt_amount_sga>.
+
+LOOP AT <lt_amount_sga_by_fab> INTO <ls_data>.
+ASSIGN COMPONENT:
+'BU_LINE'           OF STRUCTURE <ls_data> TO <l_bu_line>,
+'SMART'             OF STRUCTURE <ls_data> TO <l_smart>,
+'DATASRC'           OF STRUCTURE <ls_data> TO <l_datasrc>,
+'N_ACCOUNT'         OF STRUCTURE <ls_data> TO <l_n_account>,
+'PARTNER'           OF STRUCTURE <ls_data> TO <l_partner>,
+'PRODUCT'           OF STRUCTURE <ls_data> TO <l_product>,
+'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
+'FUNCTIONAL_AREA'   OF STRUCTURE <ls_data> TO <l_functional_area>,
+'OBS'               OF STRUCTURE <ls_data> TO <l_obs>,
+'MEASURES'          OF STRUCTURE <ls_data> TO <l_measures>,
+'VERSION'           OF STRUCTURE <ls_data> TO <l_version>,
+'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+
+IF <l_obs> = '43_4302.I' or <l_obs> = wa_param_obs_sg43_adjust_i-hashvalue or <l_obs> = wa_param_obs_sg43_adjust_i2-hashvalue.
+        <l_smart>           = c_99.
+        <l_obs>             = c_zz.
+        <l_figures>        = c_selector_woff.
+        <l_functional_area> = ls_fa_basealloc_2.
+        <l_n_account>       = c_99.
+        COLLECT <ls_data> INTO <lt_amount_sga>.
+ELSE.
+        <l_smart>           = c_99.
+        <l_obs>             = c_zz.
+        <l_figures>        = c_selector_amt.
+        <l_functional_area> = ls_fa_basealloc_2.
+        <l_n_account>       = c_99.
+        COLLECT <ls_data> INTO <lt_amount_sga>.
+ENDIF.
+ENDLOOP.
+* calculate remainder of allocation and store as DIFFERENCE in <lt_amount_sga>
+CLEAR: wa_strg.
+CONCATENATE wa_strg ` ` 'OBS EQ ''' c_zz  '''' INTO wa_strg.                    "ZZZZZZ
+CONCATENATE wa_strg ` ` 'AND FIGURES EQ ''' c_selector_amt  '''' INTO wa_strg.  "AMOUNT
+
+LOOP AT <lt_amount_sga> INTO <ls_data> WHERE (wa_strg).
+ASSIGN COMPONENT:
+'FIGURES'           OF STRUCTURE <ls_data> TO <l_figures>,
+'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+CHECK  <l_figures> <> c_selector_diff.
+ READ TABLE <lt_amount_sga> INTO <ls_rec>
+ WITH KEY
+ ('OBS')     = c_zz
+ ('FIGURES') = c_selector_woff.
+ IF sy-subrc = 0 AND NOT <l_signedtotal> IS ASSIGNED.
+ASSIGN COMPONENT:
+'SIGNEDDATA'        OF STRUCTURE <ls_rec> TO <l_signedtotal>.
+       <l_figures>    = c_selector_diff.
+       <l_signeddata> = <l_signeddata> + <l_signedtotal>.
+APPEND <ls_data> TO <lt_amount_sga>.
+UNASSIGN: <l_signedtotal>.
+EXIT.
+ENDIF.
+ENDLOOP.
+* store the difference
+IF <l_signeddata> IS ASSIGNED. UNASSIGN:  <l_signeddata>. ENDIF.
+READ TABLE <lt_amount_sga> INTO <ls_data> WITH KEY ('FIGURES') = c_selector_diff.
+IF sy-subrc = 0 AND NOT <l_signeddata> IS ASSIGNED.
+ASSIGN COMPONENT: 'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+orig_amount = <l_signeddata>.
+UNASSIGN: <l_signeddata>.
+ENDIF.
+
+CLEAR: wa_strg.
+* keep only 41 and 42 in <lt_amount_sga_by_fa>
+CONCATENATE 'DATASRC NE ''' l_datasrctarget  '''' INTO wa_strg. "HQ_DEST
+DELETE <lt_amount_sga_by_fa> WHERE (wa_strg).
+CLEAR: wa_strg.
+CONCATENATE 'OBS(2) NE ''' c_prefix_41  '''' INTO wa_strg. "41
+CONCATENATE wa_strg ` ` 'AND OBS(2) NE ''' c_prefix_42  '''' INTO wa_strg. "42
 DELETE <lt_amount_sga_by_fa> WHERE (wa_strg).
 
-CLEAR wa_strg.
-CONCATENATE 'OBS EQ ''' v_sub_tot_obs_41  '''' INTO wa_strg.
+* remove the difference from the highest allocation amount
+SORT <lt_amount_sga_by_fab>  BY ('SIGNEDDATA') DESCENDING.
+
+READ TABLE <lt_amount_sga_by_fab> ASSIGNING <ls_data> INDEX 1.
+IF sy-subrc = 0 AND NOT <l_signeddata> IS ASSIGNED.
+ASSIGN COMPONENT: 'SIGNEDDATA'        OF STRUCTURE <ls_data> TO <l_signeddata>.
+<l_signeddata> = <l_signeddata> - orig_amount.
+UNASSIGN: <l_signeddata>.
+ENDIF.
+
+APPEND LINES OF <lt_amount_sga_by_fab> TO <lt_amount_sga_by_fa>.
+REFRESH: <lt_perc_skf>.
+<lt_perc_skf> = <lt_hours_skf>.
+BREAK BB5827.
+* REMOVE ANY ZERO SIGNEDDATA
+CLEAR: wa_strg.
+CONCATENATE 'SIGNEDDATA EQ ''' '0'  '''' INTO wa_strg.
 DELETE <lt_amount_sga_by_fa> WHERE (wa_strg).
 
-CLEAR wa_strg.
-CONCATENATE 'OBS EQ ''' v_sub_tot_obs_42  '''' INTO wa_strg.
-DELETE <lt_amount_sga_by_fa> WHERE (wa_strg).
-BREAK-POINT.
+* sync internal table pointers
+REFRESH:<lt_amount_sga_by_fab>.
+<lt_amount_sga_by_fab> = <lt_amount_sga_by_fa>.
+REFRESH:<lt_amount_sga_by_fab>.
+
 
 REFRESH: ct_data.
 ct_data[] = <lt_amount_sga_by_fa>[].
-BREAK-POINT.
 
 IF ct_data IS INITIAL.
   CONCATENATE 'No additionnal allocation postings to be processed for period: ' current_month  INTO ld_log SEPARATED BY space.
@@ -1314,10 +1782,17 @@ cl_ujk_logger=>log( i_object = ld_log ).
 ELSE.
 DESCRIBE TABLE ct_data LINES l_lines.
 l_lines_on = l_lines.
-CONCATENATE 'Wrote' l_lines_on 'lines to CT_DATA for model' i_appl_id '.' INTO ld_log SEPARATED BY space.
+
+CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+            EXPORTING
+              input  = l_lines_on
+            IMPORTING
+              output = l_lines_on.
+
+CONCATENATE 'Attempt to write' l_lines_on 'lines to CT_DATA for model' i_appl_id '.' INTO ld_log SEPARATED BY space.
 cl_ujk_logger=>log( i_object = ld_log ).
 ENDIF.
-REFRESH: <lt_amount_sga_by_fa>, <lt_amount_sga>, <lt_hours_skf>, <lt_databup>,<lt_dataytd>.
+REFRESH: <lt_perc_skf>, <lt_amount_sga_by_fab>, <lt_amount_sga_by_fa>, <lt_amount_sga>, <lt_hours_skf>, <lt_databup>,<lt_dataytd>.
 
 ENDIF. "l_subrc <> 0
 ENDMETHOD.
@@ -1338,7 +1813,7 @@ METHOD if_uj_custom_logic~init.
 *    IF sy-uname = 'BB5827'.
 *      DO. IF t_debug_flag_init = ' '. EXIT. ENDIF.
 *      ENDDO.
-*      BREAK-POINT.
+*      BREAK BB5827.
 *    ENDIF.
 
 ENDMETHOD.
@@ -1364,6 +1839,7 @@ DATA:  lr_missing_exc TYPE REF TO cx_uj_custom_logic.
   res_param-hashkey = 'BU_LINE_T'.                          APPEND res_param TO req_params.
   res_param-hashkey = 'DATASRC_T'.                          APPEND res_param TO req_params.
   res_param-hashkey = 'N_ACCOUNT_T'.                        APPEND res_param TO req_params.
+  res_param-hashkey = 'N_ACCOUNT_T2'.                       APPEND res_param TO req_params.
   res_param-hashkey = 'PARTNER_T'.                          APPEND res_param TO req_params.
   res_param-hashkey = 'PRODUCT_T'.                          APPEND res_param TO req_params.
   res_param-hashkey = 'VERSION_T'.                          APPEND res_param TO req_params.
@@ -1395,6 +1871,7 @@ DATA:  lr_missing_exc TYPE REF TO cx_uj_custom_logic.
 
   res_param-hashkey = 'OBS_SG43_ADDHIE_I'.                  APPEND res_param TO req_params. "check if valid according DM Prompt
   res_param-hashkey = 'OBS_SG43_ADJUST_I'.                  APPEND res_param TO req_params. "check if valid according DM Prompt
+  res_param-hashkey = 'OBS_SG43_ADJUST_I2'.                 APPEND res_param TO req_params. "check if valid according DM Prompt
 
   res_param-hashkey = 'TOP_FA_NODE'.                        APPEND res_param TO req_params.
 
@@ -1415,6 +1892,7 @@ DATA:  lr_missing_exc TYPE REF TO cx_uj_custom_logic.
    ENDLOOP.
 REFRESH: req_params.
 *// =======================================================================================================================================================
+*// =======================================================================================================================================================
 *// NAME: CUST_BADI_RED_ALLOC.lgf
 *//
 *// CALL: Parameters can be hard coded in Script Logic instead of dynamic call via Data Manager Package
@@ -1426,6 +1904,7 @@ REFRESH: req_params.
 *//// REVISIONS: BB5827 - Luc Vanrobays
 *// July 7th 2019 - Added $FA_ND_DEFINES_SMART$
 *// October 25th - Added %__SELECTION% variables
+*// March 26th 2021 - added N_ACCOUNT_T2 to post SCope II on 95011
 *//
 *// ========================================================================================================================================================
 *// retrieve OBS members to be allocated - property ALLOC_RULE is used for OBS base for which the parent member is specified
@@ -1440,7 +1919,7 @@ REFRESH: req_params.
 *
 *// hardcoded but will be checked inside BADI if equal to passed DM Parameter OBS_SG43_ADDHIE_I
 **SELECT(%OBS_SG43_ADJUST_I%,"ID",OBS,ID=43.S090)
-*//*SELECT(%OBS_SG43_ADJUST_I2%,"ID",OBS,ID=43.S060)
+**SELECT(%OBS_SG43_ADJUST_I2%,"ID",OBS,ID=43.S060)
 *
 **XDIM_MEMBERSET OBS =  %OBS_GB41_WHAT%
 **XDIM_ADDMEMBERSET OBS = %OBS_GB41_WHERE%
@@ -1454,10 +1933,12 @@ REFRESH: req_params.
 **XDIM_ADDMEMBERSET OBS = %NODE_SG43_D_1%
 **XDIM_ADDMEMBERSET OBS = %NODE_SG43_N_2%
 **XDIM_ADDMEMBERSET OBS = %OBS_SG43_WHERE_1%
-*// adjustment OBS
+*// adjustment OBS 43.S090
 **XDIM_ADDMEMBERSET OBS = %OBS_SG43_ADJUST_I%
-*//was commented
-*//*XDIM_ADDMEMBERSET OBS = %OBS_SG43_ADJUST_I2%
+*// required for scope II
+**XDIM_ADDMEMBERSET OBS = 43_4301
+*//required to write-off amount for  OBS 43.S060 (and 43.S090 already above )
+**XDIM_ADDMEMBERSET OBS = %OBS_SG43_ADJUST_I2%
 *
 **XDIM_MEMBERSET FUNCTIONAL_AREA = BAS(%FUNCTIONAL_AREA_SET%)
 *
@@ -1477,7 +1958,7 @@ REFRESH: req_params.
 *
 **START_BADI SGA_HOURS_BASE_ALLOC_1
 *//*START_BADI SGA_HOURS_BASE_ALLOC_1
-*QUERY = ON
+*
 *WRITE = ON
 *DEBUG = ON
 *BASEALLOC=$BASEALLOC$
@@ -1488,6 +1969,7 @@ REFRESH: req_params.
 *BU_LINE_T=$BU_LINE_T$
 *DATASRC_T=$DATASRC_T$
 *N_ACCOUNT_T=$N_ACCOUNT_T$
+*N_ACCOUNT_T2=$N_ACCOUNT_T2$
 *PARTNER_T=$PARTNER_T$
 *PRODUCT_T=$PRODUCT_T$
 *VERSION_T=$VERSION_T$
@@ -1500,7 +1982,7 @@ REFRESH: req_params.
 *OBS_SG43_ADDHIE_I=$OBS_SG43_ADDHIE_I$
 *// Hard Coded via *SELECT(%OBS_SG43_ADJUST_I%,"ID",OBS,ID=43.S090) and will be checked if equal to DM $OBS_SG43_ADJUST_I$
 *OBS_SG43_ADJUST_I=$OBS_SG43_ADJUST_I$
-*
+*OBS_SG43_ADJUST_I2= %OBS_SG43_ADJUST_I2%
 *
 *TIMESELECTION=%TIME_SET%
 *
@@ -1527,7 +2009,7 @@ REFRESH: req_params.
 *TOP_FA_NODE=F0000U
 *//set CHECK_I=Y in last dedicated Data Manager Prompt if *.I naming convention is mandatory for allocation base member posting
 *CHECK_I=$CHECK_I$
-**END_BADI
+*END_BADI
 *// =======================================================================================================================================================
 *// NAME: OBS_MBRS_VARIABLES.lgf
 *//
@@ -1569,14 +2051,12 @@ REFRESH: req_params.
 **SELECT(%NODE_SG43_N_2%,"ID",OBS,"[ALLOC_RULE]= 'HOURS_N2' AND [COMP_CODE]='SG43'")
 **SELECT(%OBS_SG43_WHERE_1%,"ID", "OBS", "[ALLOC_RULE]<>'AMOUNT' AND [BUS_AREA]='4302' AND [BUS_AREA]='4303' AND [BUS_AREA]='4304' AND [BUS_AREA]='4305' AND [CALC] = 'Y'")
 **SELECT(%OBS_SG43_INPUT_1%,"ID",OBS,"[ALLOC_RULE]<>'' AND [BUS_AREA]='4302' AND [BUS_AREA]='4303' AND [BUS_AREA]='4304' AND [BUS_AREA]='4305' AND [CALC]= 'N'")
-
-
 *&---------------------------------------------------------------------*
-*2_SGA_HOURS_BASED_ALLOCATION_RED
-*RED SGA Expenses Allocation (across Functional Areas) using HOURS as a Driver
-*The DM package / BADI requires dedicated hierarchy on Entity where node will aggregate either HOURS either AMOUNT or both.
-*The Process Parameters Method contains the Script Logic commented
+* DATAMANAGER PACKAGE
 */CPMB/DEFAULT_FORMULAS
+*2_SGA_HOURS_BASED_ALLOCATION_RED
+*Group Allocations
+*RED SGA Expenses Allocation (across Functional Areas) using HOURS as a Driver
 *PROMPT(SELECTINPUT,,,,"%TIME_DIM%,%ACCOUNT_DIM%,%CURRENCY_DIM%,%DATASRC_DIM%,BU_LINE,PRODUCT,PARTNER,FIGURES,FUNCTIONAL_AREA,SMART,VERSION")
 *'PROMPT(TEXT,%SCRIPT_FILE%,"Choose Script Logic File",,)
 *PROMPT(TEXT,%BASEALLOC%,"Choose the FIGURES Driver Member to base the Allocation (eg. HOURS)",,)
@@ -1586,12 +2066,13 @@ REFRESH: req_params.
 *PROMPT(TEXT,%O_SMART%,"SMART mbr for Non FA Parent FS000 (eg.62695)",,)
 *PROMPT(TEXT,%BU_LINE_T%,"BU_LINE Target Member (eg.B9505)",,)
 *PROMPT(TEXT,%DATASRC_T%,"DATASRC Target Member (eg.HQ_DEST)",,)
-*PROMPT(TEXT,%N_ACCOUNT_T%,"N_ACCOUNT Target Member (eg.95010)",,)
+*PROMPT(TEXT,%N_ACCOUNT_T%,"N_ACCOUNT Scope I Target Member (eg.95010)",,)
+*PROMPT(TEXT,%N_ACCOUNT_T2%,"N_ACCOUNT Scope II Target Member (eg.95011)",,)
 *PROMPT(TEXT,%PARTNER_T%,"PARTNER Target Member (eg.TP_9999)",,)
 *PROMPT(TEXT,%PRODUCT_T%,"PRODUCT Target Member (eg.TE99)",,)
 *PROMPT(TEXT,%VERSION_T%,"VERSION Target Member (eg.ACTUALS)",,)
 *PROMPT(TEXT,%FIGURES_T%,"FIGURES Target Member (eg.AMOUNT)",,)
-*PROMPT(TEXT,%CHECK_I%,"Check *.I base member(eg.Y or N)",,)
+*PROMPT(TEXT,%CHECK_I%,"Check .I base member(eg.Y or N)",,)
 *PROMPT(TEXT,%OBS_SG43_ADJUST_I%,"Adjust SG43 Scope 1 Numerator with OBS (eg.43.S090)",,)
 *PROMPT(TEXT,%OBS_SG43_ADDHIE_I%,"Define Scope 2 in SG43 based on H5 OBS node (eg.H5_43_GOV)",,)
 *INFO(%EQU%,=)
@@ -1603,9 +2084,10 @@ REFRESH: req_params.
 *TASK(/CPMB/DEFAULT_FORMULAS_LOGIC,SAPP,%APP%)
 *TASK(/CPMB/DEFAULT_FORMULAS_LOGIC,SELECTION,%SELECTION%)
 *'TASK(/CPMB/DEFAULT_FORMULAS_LOGIC,LOGICFILENAME,%SCRIPT_FILE%)
-*TASK(/CPMB/DEFAULT_FORMULAS_LOGIC,REPLACEPARAM,FA_NODE_DEFINES_SMART%EQU%%FA_NODE_DEFINES_SMART%%TAB%BASEALLOC%EQU%%BASEALLOC%%TAB%BASEALLOC_2%EQU%%BASEALLOC_2%%TAB%S_SMART%EQU%%S_SMART%%TAB%O_SMART%EQU%%O_SMART%%TAB%BU_LINE_T%EQU%%BU_LINE_T%%TAB%DATASRC_T%EQU%%DATASRC_T%%TAB%N_ACCOUNT_T%EQU%%N_ACCOUNT_T%%TAB%PARTNER_T%EQU%%PARTNER_T%%TAB%PRODUCT_T%EQU%%PRODUCT_T%%TAB%VERSION_T%EQU%%VERSION_T%%TAB%FIGURES_T%EQU%%FIGURES_T%%TAB%OBS_SG43_ADJUST_I%EQU%%OBS_SG43_ADJUST_I%%TAB%OBS_SG43_ADDHIE_I%EQU%%OBS_SG43_ADDHIE_I%%TAB%CHECK_I%EQU%%CHECK_I%)
+*TASK(/CPMB/DEFAULT_FORMULAS_LOGIC,REPLACEPARAM,FA_NODE_DEFINES_SMART%EQU%%FA_NODE_DEFINES_SMART%%TAB%BASEALLOC%EQU%%BASEALLOC%%TAB%BASEALLOC_2%EQU%%BASEALLOC_2%%TAB%S_SMART%EQU%%S_SMART%%TAB%O_SMART%EQU%%O_SMART%%TAB%BU_LINE_T%EQU%%BU_LINE_T
+*line1956continued%%TAB%DATASRC_T%EQU%%DATASRC_T%%TAB%N_ACCOUNT_T%EQU%%N_ACCOUNT_T%%TAB%N_ACCOUNT_T2%EQU%%N_ACCOUNT_T2%%TAB%PARTNER_T%EQU%%PARTNER_T%%TAB%PRODUCT_T%EQU%%PRODUCT_T%%TAB%VERSION_T%EQU%%VERSION_T
+*line1957continued%%TAB%FIGURES_T%EQU%%FIGURES_T%%TAB%OBS_SG43_ADJUST_I%EQU%%OBS_SG43_ADJUST_I%%TAB%OBS_SG43_ADDHIE_I%EQU%%OBS_SG43_ADDHIE_I%%TAB%CHECK_I%EQU%%CHECK_I%)
 *TASK(/CPMB/DEFAULT_FORMULAS_LOGIC,LOGICFILENAME,CUST_BADI_RED_ALLOC.LGF)
-
 
 
 ENDMETHOD.
