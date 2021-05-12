@@ -1,0 +1,317 @@
+class ZCL_BPC_DM_IMP_ROUT_SMART_WCR definition
+  public
+  final
+  create public .
+
+public section.
+
+  interfaces IF_BADI_INTERFACE .
+  interfaces IF_UJD_ROUTINE .
+protected section.
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_BPC_DM_IMP_ROUT_SMART_WCR IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_BPC_DM_IMP_ROUT_SMART_WCR->IF_UJD_ROUTINE~RUNROUTINE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_MORE_DATA                    TYPE        UJ_FLG
+* | [--->] I_SOURCE_INFO                  TYPE        UJD_S_SOURCE_INFO
+* | [--->] IT_PACKAGE_PARAS               TYPE        UJD_TH_VALUE
+* | [--->] I_TCFILE_CONTENT               TYPE        UJD_S_TCFILE_CONTENT
+* | [--->] IR_DATA                        TYPE REF TO DATA
+* | [<---] ER_ERROR_DATA                  TYPE REF TO DATA
+* | [<---] ET_ERROR_REASON                TYPE        UJ0_T_MESSAGE
+* | [<---] ET_MESSAGE                     TYPE        UJ0_T_MESSAGE
+* | [<---] ER_DATA                        TYPE REF TO DATA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD if_ujd_routine~runroutine.
+* MDT file header is:
+* RU: Reporting unit | Accounts & KFI | Flag to indicate tha | Version | MDT Period | Amount
+* transform Version BUDGET_V1 or BUDGET_V2 to B2020V1 or B2021V1 or ACTUALS
+* delete rows where Flag to indicate tha is different from #
+* skip first 5 records including header ? do the skip 4 records in Transformation
+* requires : SKIP in transformation file along with routine statement and filter as 'MDT_WCR'
+* Here below the DM transformation File
+**OPTIONS
+*FORMAT = DELIMITED
+*HEADER = YES
+*DELIMITER = TAB
+*AMOUNTDECIMALPOINT = .
+*SKIP = 0
+*SKIPIF =
+*VALIDATERECORDS=YES
+*CREDITPOSITIVE=YES
+*MAXREJECTCOUNT=
+*ROUNDAMOUNT=
+*STARTROUTINE=MDT_WCR
+**MAPPING
+*OBS=*COL(1)
+*SMART_ID=*COL(2)
+*DATASRC=*COL(3)
+*VERSION=*COL(4)
+*TIME=*COL(5)
+*RPTCURRENCY=*NEWCOL(EUR)
+*CONTRIB_LEVEL=*NEWCOL(RU)
+*FLOW_SMART=*NEWCOL(F99)
+*SIGNEDDATA=*COL(6)
+**CONVERSION
+
+DATA: t_debug_flag_start VALUE 'X',
+      off  TYPE i.
+
+DATA: lo_dataref      TYPE REF TO data,
+      lv_tabix        TYPE sy-tabix,
+      lo_struct_descr TYPE REF TO cl_abap_structdescr.
+
+DATA: lt_datacomp TYPE cl_abap_structdescr=>component_table, "=TYPE abap_component_tab.
+      ls_datacomp LIKE LINE OF lt_datacomp,
+      lt_columns_bup TYPE TABLE OF string,
+      lt_columns TYPE TABLE OF string,
+            ls_columns TYPE string,
+      lt_components TYPE cl_abap_structdescr=>component_table, "=TYPE abap_component_tab.
+      lo_field_type TYPE REF TO cl_abap_datadescr,
+      lt_column_data TYPE TABLE OF string,
+      ref_obj_newdata TYPE REF TO cl_abap_structdescr,
+      ref_obj_newdatatable TYPE REF TO cl_abap_tabledescr,
+      gso_newdatahandle  TYPE REF TO data,
+      wa_strg           TYPE string,
+      ld_log TYPE string.
+
+DATA:
+ls_tcfile_content	TYPE ujd_s_tcfile_content,
+lt_trfr_mapping TYPE ujd_t_round_value,
+ls_trfr_mapping TYPE ujd_s_round_value,
+lt_trfr_option TYPE ujd_t_round_value,
+ls_trfr_option TYPE ujd_s_round_value.
+
+DATA: v_hex     TYPE x VALUE '00',
+      v_deci    TYPE i,
+      v_sep    TYPE c LENGTH 1,
+      is_base_mbr TYPE boolean.
+
+TYPES:
+BEGIN OF ty_mdt,
+        obs                   TYPE uj_dim_member, "Dimension
+        smart_id              TYPE uj_dim_member, "Dimension
+        datasrc               TYPE uj_dim_member, "Dimension
+        version               TYPE uj_dim_member, "Dimension
+        time                  TYPE uj_dim_member, "Dimension
+        signeddata            TYPE uj_signeddata, "KeyFigure
+END OF ty_mdt.
+
+
+DATA: ls_mdt TYPE ty_mdt,
+      new_time(7) TYPE c,
+      new_version(7) TYPE c. "ACTUALS, B2019V1, B2020V1
+
+
+FIELD-SYMBOLS: <fc_char_x> TYPE x,
+               <fs_char_x> TYPE x.
+
+FIELD-SYMBOLS: <lt_data_ex>         TYPE STANDARD TABLE,
+               <lt_data_er>         TYPE STANDARD TABLE,
+               <lt_data_imp>        TYPE STANDARD TABLE,
+               <lv_line>            TYPE any,
+               <lt_data_im>         TYPE STANDARD TABLE,
+               <ls_data>            TYPE any,
+
+               <ls_columns>         TYPE string,
+               <fs_newdatastruct>   TYPE any,
+               <ls_components>      TYPE abap_componentdescr,
+               <ls_column_data>     TYPE any,
+               <lv_data_field>      TYPE any,
+               <lt_data_struct>     TYPE STANDARD TABLE,
+               <ls_data_struct>     TYPE any.
+
+FIELD-SYMBOLS:
+               <l_contrib_level>       TYPE any, "Dimension
+               <l_rptcurrency>         TYPE any, "Dimension
+               <l_flow_smart>          TYPE any, "Dimension
+               <l_obs>                 TYPE any, "Dimension
+               <l_smart_id>            TYPE any, "Dimension
+               <l_datasrc>             TYPE any, "Dimension
+               <l_version>             TYPE any, "Dimension
+               <l_time>                TYPE any, "Dimension
+               <l_signeddata>          TYPE any. "Dimension
+
+CONSTANTS:    c_pattern TYPE char4 VALUE 'DESC',
+              c_pattern2 TYPE char7 VALUE 'R_LEVEL',
+              c_undersc TYPE c LENGTH 1 VALUE '_' ,
+              c_hash TYPE c LENGTH 1 VALUE '#'. "true 23 hex character
+
+* I_TCFILE_CONTENT is private
+ls_tcfile_content = i_tcfile_content.
+SORT ls_tcfile_content-mapping ASCENDING BY value.
+lt_trfr_mapping[] = ls_tcfile_content-mapping[].
+lt_trfr_option[] = ls_tcfile_content-opt[].
+
+* retrieve the separator used in the transformation file
+
+LOOP AT lt_trfr_option INTO ls_trfr_option.
+   IF ls_trfr_option-fieldname = 'DELIMITER'.
+     CASE ls_trfr_option-value.
+      WHEN 'TAB'.
+      v_sep = cl_abap_char_utilities=>horizontal_tab.
+      WHEN ','.
+      v_sep = ls_trfr_option-value.
+     ENDCASE.
+   ENDIF.
+ENDLOOP.
+* store target DIMENSIONS to be mapped from the file
+
+LOOP AT lt_trfr_mapping INTO ls_trfr_mapping.
+IF ls_trfr_mapping-value(4) <> '*COL'.
+DELETE lt_trfr_mapping INDEX sy-tabix.
+ENDIF.
+ENDLOOP.
+
+v_deci = v_hex.
+
+CHECK i_source_info-appset_id = 'TRACTEBEL_GLO'.
+    IF sy-uname = 'BB5827'." AND i_source_info-package_name <> 'VALIDATE'.
+      DO.
+        IF t_debug_flag_start = ' '.
+          EXIT.
+        ENDIF.
+      ENDDO.
+      BREAK BB5827.
+    ENDIF.
+* Assign importing data reference to field symbol
+ ASSIGN ir_data->* TO <lt_data_im>.
+* Create work area for importing data
+ CREATE DATA lo_dataref LIKE LINE OF <lt_data_im>.
+ ASSIGN lo_dataref->* TO <ls_data>.
+* Create new internal table for exporting data and
+* error data.
+ CREATE DATA lo_dataref LIKE TABLE OF <ls_data>.
+ ASSIGN lo_dataref->* TO <lt_data_ex>.
+ CREATE DATA lo_dataref LIKE TABLE OF <ls_data>.
+ ASSIGN lo_dataref->* TO <lt_data_er>.
+
+ ASSIGN c_hash TO <fs_char_x> CASTING TYPE x.
+
+* handle only data not header
+LOOP AT <lt_data_im> ASSIGNING <ls_data>.
+ CLEAR: is_base_mbr, ls_mdt, ls_columns, new_time, new_version.
+ REFRESH:lt_columns.
+lv_tabix = sy-tabix.
+ IF sy-subrc = 0 AND lv_tabix > 1.
+ ASSIGN COMPONENT `LINE` OF STRUCTURE <ls_data> TO <lv_line>.
+ SPLIT <lv_line> AT v_sep INTO TABLE lt_columns.
+
+ LOOP AT lt_columns INTO ls_columns.
+   IF ls_columns CA c_hash.
+   is_base_mbr = abap_true.
+   ENDIF.
+ ENDLOOP.
+
+ IF is_base_mbr = abap_true.
+
+    LOOP AT lt_columns INTO ls_columns.
+    CASE sy-tabix.
+     WHEN 1. "OBS
+       ls_mdt-obs = ls_columns.
+     WHEN 2. "SMART_ID
+       ls_mdt-smart_id = ls_columns.
+     WHEN 3. "DATASRC used to store # flag
+       ls_mdt-datasrc = 'MANUAL_INP'.
+     WHEN 4. "VERSION
+       ls_mdt-version = ls_columns.
+     WHEN 5. "TIME
+       ls_mdt-time = ls_columns.
+     WHEN 6. "SIGNEDDATA
+       ls_mdt-signeddata = ls_columns.
+    ENDCASE.
+    ENDLOOP.
+
+    CHECK new_time IS INITIAL AND new_version IS INITIAL.
+    REPLACE c_hash IN <lv_line> WITH ls_mdt-datasrc.
+    CONCATENATE ls_mdt-time(4) ls_mdt-time+5(2) INTO new_time SEPARATED BY c_undersc.
+    REPLACE ls_mdt-time IN <lv_line> WITH new_time.
+    CASE ls_mdt-version.
+    WHEN 'ACTUAL'.  new_version = 'ACTUALS'.
+    WHEN 'BUDGET_V1'.
+    CONCATENATE 'B' ls_mdt-time(4) 'V1' INTO new_version.
+    WHEN 'BUDGET_V2'.
+    CONCATENATE 'B' ls_mdt-time(4) 'V2' INTO new_version.
+    WHEN 'BUDGET_V3'.
+    CONCATENATE 'B' ls_mdt-time(4) 'V3' INTO new_version.
+   ENDCASE.
+    REPLACE ls_mdt-version IN <lv_line> WITH new_version.
+
+ELSEIF is_base_mbr = abap_false.
+DELETE <lt_data_im> INDEX lv_tabix.
+ENDIF.
+ ENDIF.
+
+ENDLOOP.
+
+ lt_columns_bup[] =  lt_columns[].
+ REFRESH: lt_columns.
+* Build internal table with true columns from header row.
+ lo_field_type ?= cl_abap_datadescr=>describe_by_name( `UJ_LARGE_STRING` ).
+ LOOP AT i_tcfile_content-mapping INTO ls_trfr_mapping.
+ ls_columns = ls_trfr_mapping-fieldname.
+ APPEND ls_columns TO lt_columns.
+ ENDLOOP.
+
+ LOOP AT lt_columns ASSIGNING <ls_columns>.
+ APPEND INITIAL LINE TO lt_components ASSIGNING <ls_components>.
+ <ls_components>-name = <ls_columns>.
+ <ls_components>-type = lo_field_type.
+ ENDLOOP.
+* Use RTTS to describe the structure
+ lo_struct_descr = cl_abap_structdescr=>create( p_components = lt_components p_strict =  ' ' ).
+* Create structure from describer
+ CREATE DATA lo_dataref TYPE HANDLE lo_struct_descr.
+ ASSIGN lo_dataref->* TO <ls_data_struct> .
+* Create internal table from structure
+ CREATE DATA lo_dataref LIKE TABLE OF <ls_data_struct> .
+ ASSIGN lo_dataref->* TO <lt_data_struct>.
+* Fill new structured internal table with data from importing parameter
+ LOOP AT <lt_data_im> ASSIGNING <ls_data>.
+ APPEND INITIAL LINE TO <lt_data_struct> ASSIGNING <ls_data_struct>.
+ ASSIGN COMPONENT `LINE` OF STRUCTURE <ls_data> TO <lv_line>.
+ SPLIT <lv_line> AT v_sep INTO TABLE lt_column_data.
+ LOOP AT lt_column_data ASSIGNING <ls_column_data>.
+ ASSIGN COMPONENT sy-tabix
+ OF STRUCTURE <ls_data_struct> TO <lv_data_field>.
+ IF sy-subrc <> 0.
+ CONTINUE.
+ ENDIF.
+ <lv_data_field> = <ls_column_data>.
+ ENDLOOP.
+ ENDLOOP.
+* Update  additional field in structured data table
+
+DELETE <lt_data_struct> INDEX 1.
+
+ LOOP AT <lt_data_struct> ASSIGNING <ls_data_struct>.
+     ASSIGN COMPONENT:
+'CONTRIB_LEVEL'               OF STRUCTURE <ls_data_struct> TO <l_contrib_level>,
+'FLOW_SMART'                  OF STRUCTURE <ls_data_struct> TO <l_flow_smart>,
+'RPTCURRENCY'                 OF STRUCTURE <ls_data_struct> TO <l_rptcurrency>,
+'SIGNEDDATA'                  OF STRUCTURE <ls_data_struct> TO <l_signeddata>.
+     <l_signeddata>    = <l_rptcurrency>.
+     <l_rptcurrency>   = 'EUR'.
+     <l_contrib_level> = 'RU'.
+     <l_flow_smart>    = 'F99'.
+
+ ENDLOOP.
+* Remove non-base members from dataset to import
+*CLEAR: wa_strg.
+*CONCATENATE 'DATASRC NE ''' c_hash  '''' INTO wa_strg.
+*DELETE <lt_data_struct>  WHERE (wa_strg).
+BREAK BB5827.
+<lt_data_ex>[] = <lt_data_im>[].
+* No error handling so far
+ GET REFERENCE OF <lt_data_ex> INTO er_data.
+* GET REFERENCE OF <lt_data_er> INTO er_error_data.
+REFRESH: <lt_data_im>,<lt_data_struct>. "<lt_data_ex>.
+ENDMETHOD.
+ENDCLASS.
