@@ -1,14 +1,14 @@
-class ZCL_BPC_DM_IMP_ROUT_SMART_WCR definition
-  public
-  final
-  create public .
+CLASS zcl_bpc_dm_imp_rout_smart_wcr DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
 
-public section.
+PUBLIC SECTION.
 
-  interfaces IF_BADI_INTERFACE .
-  interfaces IF_UJD_ROUTINE .
-protected section.
-private section.
+  INTERFACES if_badi_interface .
+  INTERFACES if_ujd_routine .
+PROTECTED SECTION.
+PRIVATE SECTION.
 ENDCLASS.
 
 
@@ -30,13 +30,20 @@ CLASS ZCL_BPC_DM_IMP_ROUT_SMART_WCR IMPLEMENTATION.
 * | [<---] ER_DATA                        TYPE REF TO DATA
 * +--------------------------------------------------------------------------------------</SIGNATURE>
 METHOD if_ujd_routine~runroutine.
-* MDT file header is:
-* RU: Reporting unit | Accounts & KFI | Flag to indicate tha | Version | MDT Period | Amount
-* transform Version BUDGET_V1 or BUDGET_V2 to B2020V1 or B2021V1 or ACTUALS
-* delete rows where Flag to indicate tha is different from #
-* skip first 5 records including header ? do the skip 4 records in Transformation
-* requires : SKIP in transformation file along with routine statement and filter as 'MDT_WCR'
-* Here below the DM transformation File
+* MDT file header is or similar but can be in different order
+* RU: Reporting unit | Accounts & KFI | Flag to indicate tha | Version | TE_CURRECNY | MDT Period | Amount
+
+* if not equal to ACTUALS or BYYYYVx > transform Version BUDGET_V1 or BUDGET_V2 to B2020V1 or B2021V1 or ACTUALS
+
+* get only # flagged records ie. base members of SMART code
+
+* translate "3,501.0" or "3,501,000" into 3501000
+
+* Requires : 1/ SMART Code Hierarchy (SMART_ID_PARENTH1 and SMART_ID__PARENTH3) to be updated
+*            2/ DM Transformation Mapping Instruction *COL(sequence number) matters
+
+* Here below the DM transformation File for BU23_SMART and PL_YTD
+
 **OPTIONS
 *FORMAT = DELIMITED
 *HEADER = YES
@@ -51,21 +58,57 @@ METHOD if_ujd_routine~runroutine.
 *STARTROUTINE=MDT_WCR
 **MAPPING
 *OBS=*COL(1)
-*SMART_ID=*COL(2)
-*DATASRC=*COL(3)
-*VERSION=*COL(4)
-*TIME=*COL(5)
-*RPTCURRENCY=*NEWCOL(EUR)
+*VERSION=*COL(2)
+*TIME=*COL(3)
+*SMART_ID=*COL(4)
+*DATASRC=*COL(5)
+*RPTCURRENCY=*COL(6)
+*SIGNEDDATA=*COL(7)
 *CONTRIB_LEVEL=*NEWCOL(RU)
 *FLOW_SMART=*NEWCOL(F99)
-*SIGNEDDATA=*COL(6)
 **CONVERSION
 
+* AND DM Transformation File for PL_YTD
+
+*OPTIONS
+*FORMAT = DELIMITED
+*HEADER = YES
+*DELIMITER = TAB
+*AMOUNTDECIMALPOINT = .
+*SKIP = 0
+*SKIPIF =
+*VALIDATERECORDS=YES
+*CREDITPOSITIVE=YES
+*MAXREJECTCOUNT=
+*ROUNDAMOUNT=
+*STARTROUTINE=MDT_WCR
+*MAPPING
+*OBS=*COL(1)
+*VERSION=*COL(2)
+*TIME=*COL(3)
+*SMART=*COL(4)
+*DATASRC=*COL(5)
+*CURRENCY=*COL(6)
+*SIGNEDDATA=*COL(7)
+*BU_LINE=*NEWCOL(B999)
+*EST_TYPE=*NEWCOL(ONEC)
+*FIGURES=*NEWCOL(AMOUNT)
+*FUNCTIONAL_AREA=*NEWCOL(SGA999)
+*N_ACCOUNT=*NEWCOL(99999)
+*PRODUCT=*NEWCOL(00)
+
+*CONVERSION
+
 DATA: t_debug_flag_start VALUE 'X',
-      off  TYPE i.
+      off  TYPE i,
+      temp_offset   TYPE i,
+      offset_signeddata   TYPE i,
+      moff TYPE i,
+      mlen TYPE i.
 
 DATA: lo_dataref      TYPE REF TO data,
       lv_tabix        TYPE sy-tabix,
+      lv_tabix_columns       TYPE sy-tabix,
       lo_struct_descr TYPE REF TO cl_abap_structdescr.
 
 DATA: lt_datacomp TYPE cl_abap_structdescr=>component_table, "=TYPE abap_component_tab.
@@ -91,24 +134,37 @@ ls_trfr_option TYPE ujd_s_round_value.
 
 DATA: v_hex     TYPE x VALUE '00',
       v_deci    TYPE i,
+      v_sign    type i VALUE 1,
       v_sep    TYPE c LENGTH 1,
-      is_base_mbr TYPE boolean.
+      is_base_mbr TYPE boolean,
+      v_exit_mainloop TYPE boolean.
 
 TYPES:
 BEGIN OF ty_mdt,
         obs                   TYPE uj_dim_member, "Dimension
         smart_id              TYPE uj_dim_member, "Dimension
+        smart                 TYPE uj_dim_member, "Dimension
         datasrc               TYPE uj_dim_member, "Dimension
         version               TYPE uj_dim_member, "Dimension
         time                  TYPE uj_dim_member, "Dimension
+        rptcurrency           TYPE uj_dim_member, "Dimension
+        currency              TYPE uj_dim_member, "Dimension
         signeddata            TYPE uj_signeddata, "KeyFigure
 END OF ty_mdt.
 
 
 DATA: ls_mdt TYPE ty_mdt,
       new_time(7) TYPE c,
-      new_version(7) TYPE c. "ACTUALS, B2019V1, B2020V1
-
+      new_version(7) TYPE c, "ACTUALS, B2019V1, B2020V1
+      old_signeddata TYPE uj_dim_member, "DEC 20 7
+      orig_smart_id TYPE uj_dim_member,
+      orig_smart    TYPE uj_dim_member,
+      new_signeddata TYPE uj_dim_member,
+      result_tab_htab TYPE match_result_tab,
+      s_result_tab TYPE MATCH_RESULT,
+      result_tab_crlf TYPE match_result_tab,
+      s_result_crlf TYPE MATCH_RESULT,
+      lv_CHAR type c length 1.
 
 FIELD-SYMBOLS: <fc_char_x> TYPE x,
                <fs_char_x> TYPE x.
@@ -139,11 +195,16 @@ FIELD-SYMBOLS:
                <l_time>                TYPE any, "Dimension
                <l_signeddata>          TYPE any. "Dimension
 
-CONSTANTS:    c_pattern TYPE char4 VALUE 'DESC',
-              c_pattern2 TYPE char7 VALUE 'R_LEVEL',
-              c_undersc TYPE c LENGTH 1 VALUE '_' ,
-              c_hash TYPE c LENGTH 1 VALUE '#'. "true 23 hex character
-
+CONSTANTS:    c_pattern_acc     TYPE char4 VALUE 'ACC_',
+              c_lparenth        TYPE c LENGTH 1 VALUE '(', "left parenthesis in signeddata
+              c_rparenth        TYPE c LENGTH 1 VALUE ')', "right parenthesis in signeddata
+              c_dot             TYPE c LENGTH 1 VALUE '.', "dot in signeddata
+              c_undersc         TYPE c LENGTH 1 VALUE '_' ,
+              c_hash            TYPE c LENGTH 1 VALUE '#', "true 23 hex character
+              c_dq              TYPE c LENGTH 1 VALUE '"', "double-quotes
+              c_comma           TYPE c LENGTH 1 VALUE ',', "comma
+              c_space           TYPE c LENGTH 1 VALUE ' ', "space
+              c_pattern_node    TYPE char3 VALUE '[-]'. "node symbol
 * I_TCFILE_CONTENT is private
 ls_tcfile_content = i_tcfile_content.
 SORT ls_tcfile_content-mapping ASCENDING BY value.
@@ -179,7 +240,7 @@ CHECK i_source_info-appset_id = 'TRACTEBEL_GLO'.
           EXIT.
         ENDIF.
       ENDDO.
-      BREAK BB5827.
+      BREAK bb5827.
     ENDIF.
 * Assign importing data reference to field symbol
  ASSIGN ir_data->* TO <lt_data_im>.
@@ -195,14 +256,24 @@ CHECK i_source_info-appset_id = 'TRACTEBEL_GLO'.
 
  ASSIGN c_hash TO <fs_char_x> CASTING TYPE x.
 
+* The TAB character
+lv_CHAR = CL_ABAP_CHAR_UTILITIES=>HORIZONTAL_TAB.
+ASSIGN lv_CHAR TO <fs_CHAR_X> CASTING TYPE X.
+
 * handle only data not header
 LOOP AT <lt_data_im> ASSIGNING <ls_data>.
- CLEAR: is_base_mbr, ls_mdt, ls_columns, new_time, new_version.
+ CLEAR: is_base_mbr, v_exit_mainloop, ls_mdt, ls_columns, orig_smart_id, new_time, new_version, old_signeddata, new_signeddata, lv_tabix.
  REFRESH:lt_columns.
-lv_tabix = sy-tabix.
+ lv_tabix = sy-tabix.
  IF sy-subrc = 0 AND lv_tabix > 1.
  ASSIGN COMPONENT `LINE` OF STRUCTURE <ls_data> TO <lv_line>.
  SPLIT <lv_line> AT v_sep INTO TABLE lt_columns.
+
+IF v_sep = CL_ABAP_CHAR_UTILITIES=>HORIZONTAL_TAB.
+FIND ALL OCCURRENCES OF SUBSTRING CL_ABAP_CHAR_UTILITIES=>HORIZONTAL_TAB  IN <lv_line>  RESULTS result_tab_htab.
+else.
+FIND ALL OCCURRENCES OF SUBSTRING v_sep  IN <lv_line>  RESULTS result_tab_htab.
+ENDIF. "IGNORING CASE
 
  LOOP AT lt_columns INTO ls_columns.
    IF ls_columns CA c_hash.
@@ -211,25 +282,96 @@ lv_tabix = sy-tabix.
  ENDLOOP.
 
  IF is_base_mbr = abap_true.
-
+CLEAR: lv_tabix_columns.
     LOOP AT lt_columns INTO ls_columns.
-    CASE sy-tabix.
-     WHEN 1. "OBS
+    CLEAR: temp_offset, offset_signeddata.
+    lv_tabix_columns = sy-tabix.
+
+     READ TABLE result_tab_htab INTO s_result_tab INDEX lv_tabix_columns.
+         temp_offset = s_result_tab-offset.
+     READ TABLE lt_trfr_mapping INTO ls_trfr_mapping INDEX lv_tabix_columns.
+
+      CASE ls_trfr_mapping-fieldname.
+       WHEN 'OBS'.
+
        ls_mdt-obs = ls_columns.
-     WHEN 2. "SMART_ID
+       WHEN 'SMART_ID'. " discard ACC_ like SMART_ID and apply same logic to SMART
+
+       orig_smart_id =  ls_columns.
+       REPLACE c_pattern_node IN ls_columns WITH ''.
+       CONDENSE ls_columns.
+       IF ls_columns(4) = c_pattern_acc.
+       DELETE <lt_data_im> INDEX lv_tabix.
+       v_exit_mainloop = abap_true.
+       EXIT.
+       ELSE.
        ls_mdt-smart_id = ls_columns.
-     WHEN 3. "DATASRC used to store # flag
+       ENDIF.
+       WHEN 'DATASRC'. " used to store # flag
        ls_mdt-datasrc = 'MANUAL_INP'.
-     WHEN 4. "VERSION
+       WHEN 'VERSION'.
        ls_mdt-version = ls_columns.
-     WHEN 5. "TIME
+       WHEN 'TIME'.
        ls_mdt-time = ls_columns.
-     WHEN 6. "SIGNEDDATA
+       WHEN 'SIGNEDDATA'. " without any format adjustment "3,501.0" or "3,501,000 "
+       offset_signeddata = temp_offset + 1.
+       CLEAR: mlen.
+
+       mlen = STRLEN(  <lv_line> ).
+       mlen = mlen - offset_signeddata.
+*FIND SUBSTRING CL_ABAP_CHAR_UTILITIES=>CR_LF  IN <lv_line>  RESULTS result_tab_crlf.
+* back_up original version of amount
+       old_signeddata = ls_columns.
+       FIND c_lparenth IN ls_columns MATCH OFFSET off.
+       IF sy-subrc = 0. v_sign = -1.
+       REPLACE c_lparenth IN ls_columns WITH ''.
+       REPLACE c_rparenth IN ls_columns WITH ''.
+       else. v_sign = 1. endif.
+       REPLACE ALL OCCURRENCES of c_dq  IN ls_columns WITH ''. "double-quotes
+       REPLACE ALL OCCURRENCES of c_comma IN ls_columns WITH ''. "comma
+       FIND c_dot IN ls_columns MATCH OFFSET off.
+       IF sy-subrc = 0. "as in "3,501.0"
+       ls_mdt-signeddata = ls_columns(off).
+       ls_mdt-signeddata = ls_mdt-signeddata * 1000 * v_sign.
+       new_signeddata = ls_mdt-signeddata.
+       ELSE. " "3,501,000 "
+       CONDENSE ls_columns.
        ls_mdt-signeddata = ls_columns.
+       ls_mdt-signeddata = ls_mdt-signeddata * v_sign.
+       new_signeddata = ls_mdt-signeddata.
+
+       ENDIF.
+       WHEN 'RPTCURRENCY'. "when adding rptcurrency in the file
+        ls_mdt-rptcurrency = ls_columns.
+       WHEN 'CURRENCY'. "or currency in the file
+        ls_mdt-currency = ls_columns.
+       WHEN 'SMART'. " discard ACC_ like SMART_ID
+        orig_smart =  ls_columns.
+       REPLACE c_pattern_node IN ls_columns WITH ''. "[-]
+       CONDENSE ls_columns.
+       IF ls_columns(4) = c_pattern_acc.
+       DELETE <lt_data_im> INDEX lv_tabix.
+       v_exit_mainloop = abap_true.
+       EXIT.
+       ELSE.
+       ls_mdt-smart = ls_columns.
+       ENDIF.
     ENDCASE.
     ENDLOOP.
-
+    if <lv_line> IS ASSIGNED. "it is not, if row has been deleted
     CHECK new_time IS INITIAL AND new_version IS INITIAL.
+    IF lv_tabix = 2922 or lv_tabix = 3149.
+    BREAK-POINT.
+    ENDIF.
+* replace section for <lv_line>
+    REPLACE SECTION OFFSET offset_signeddata LENGTH mlen OF <lv_line> WITH new_signeddata
+                IN CHARACTER MODE.
+*    REPLACE old_signeddata IN <lv_line> WITH new_signeddata.
+    if NOT ls_mdt-smart_id IS INITIAL.
+        REPLACE orig_smart_id IN <lv_line> WITH ls_mdt-smart_id.
+        ELSEIF NOT ls_mdt-smart is initial.
+        REPLACE orig_smart IN <lv_line> WITH ls_mdt-smart.
+        endif.
     REPLACE c_hash IN <lv_line> WITH ls_mdt-datasrc.
     CONCATENATE ls_mdt-time(4) ls_mdt-time+5(2) INTO new_time SEPARATED BY c_undersc.
     REPLACE ls_mdt-time IN <lv_line> WITH new_time.
@@ -241,9 +383,16 @@ lv_tabix = sy-tabix.
     CONCATENATE 'B' ls_mdt-time(4) 'V2' INTO new_version.
     WHEN 'BUDGET_V3'.
     CONCATENATE 'B' ls_mdt-time(4) 'V3' INTO new_version.
+    WHEN OTHERS. "case file´s VERSION column is using TE versioning ie B2020Vx
+       IF ls_mdt-version(1) = 'B'.
+        IF ls_mdt-version+1(4) = ls_mdt-time(4). new_version = ls_mdt-version. ELSE. CONCATENATE 'B' ls_mdt-time(4) 'V1' INTO new_version. ENDIF.
+       ELSEIF ls_mdt-version(1) = 'A'.
+       ls_mdt-version = 'ACTUALS'.
+       ENDIF.
    ENDCASE.
     REPLACE ls_mdt-version IN <lv_line> WITH new_version.
 
+   ENDIF. " = v_exit_mainloop false
 ELSEIF is_base_mbr = abap_false.
 DELETE <lt_data_im> INDEX lv_tabix.
 ENDIF.
@@ -307,7 +456,7 @@ DELETE <lt_data_struct> INDEX 1.
 *CLEAR: wa_strg.
 *CONCATENATE 'DATASRC NE ''' c_hash  '''' INTO wa_strg.
 *DELETE <lt_data_struct>  WHERE (wa_strg).
-BREAK BB5827.
+
 <lt_data_ex>[] = <lt_data_im>[].
 * No error handling so far
  GET REFERENCE OF <lt_data_ex> INTO er_data.
