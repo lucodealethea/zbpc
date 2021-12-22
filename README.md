@@ -15,3 +15,8 @@ and
 
 Requires a Dedicated Entity Hierarchy to aggregate the drivers and define receiver member for the allocation posting.
 
+
+BPC Embedded Custom planning Function Type and Class/Methods
+
+
+
