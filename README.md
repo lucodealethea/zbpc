@@ -1,7 +1,12 @@
 # zbpc
 
-Some utilities for BPC, namely a generic hierarchy browser - ZBPC_BROWSE_HIER - to retrieve sub-nodes and base members of any node for any BPC hierarchy combining with member properties and description. UI is ALV grid.
+Some utilities for BPC, namely a generic hierarchy browser - ZBPC_BROWSE_HIER - to retrieve sub-nodes and base members of any node for any BPC hierarchy combining with member properties and description. UI is ALV grid. ABAP RTTS ABAP eventually to be be replaced with HANA/new ABAP 753 Hierarchy Functions to allow more transparent consumption.
 
+BadIs for UJ_CUSTOM_LOGIC Enhancement Spot
+
+ZCL_BPC_ADBC_CUSTOM_LOGIC: 
+BPC DATAMANAGER Logic Script Calling UJ_CUSTOM_LOGIC Badi (ABAP Class via ADBC) to pass SQL string returning BPC Model (CT_DATA like) dataset.
+This implies having DDIC View created (via CDS) on top of BPC Model(InfoCube-750 or aDSO-753 depending on SAP_ABA release ). Ideally, Views also Available on BPC Dimensions and BPC Dimension Hierarchies
 
 BadIs for BPC 10.
 https://answers.sap.com/questions/10904355/usage-of-the-write-back-pre-process-badi.html
