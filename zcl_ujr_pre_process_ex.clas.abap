@@ -23,8 +23,20 @@ METHOD if_ujr_wb_pre_process~pre_process.
 * - Disaggregation only happens on Entity dimension
 * - Disaggregate value into all children base members averagely
 * - It is highly recommended BAdI only implements for InputSchedule
-* which means I_MODULE_ID = 'MAN'
-**********************************************************************
+*   which means I_MODULE_ID = 'MAN'
+* Logic:
+*	Package splitting will base on processed data. 
+* If there are 30000 records before process and 50000 after that, 
+* the package size is 40000; the records will be split into 2 packages.
+*	Member access check will base on processed data:
+* If user send data to member A on which he does not have access, 
+* and the BADI replaces member A with member B which user has access, 
+* then the data will be successfully submitted.
+*	Only those data successfully passed all checksum (member access check, work status checks, etc.) will be written to cube.
+* Next:
+*	Script logic will be executed on those transaction data successfully written to cube.
+*	Audit will be executed on those transaction data successfully written to cube.
+********************************************************************************************************
     DATA: ls_entity TYPE ujr_s_dim_handler,
     lt_entity_members TYPE uja_t_dim_member, " dimension members of Entity
     lo_entity TYPE REF TO if_uja_dim_data, " Object Reference to Dimension
