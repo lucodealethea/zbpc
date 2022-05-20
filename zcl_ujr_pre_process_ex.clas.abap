@@ -30,7 +30,7 @@ METHOD if_ujr_wb_pre_process~pre_process.
     lo_entity TYPE REF TO if_uja_dim_data, " Object Reference to Dimension
     lt_hier_info TYPE uja_t_hier, " Hierachies Infos
     ls_hier_info TYPE uja_s_hier,
-    lt_hier_name TYPE uja_t_hier_name, " Hierachies name list
+    lt_hier_name TYPE uja_t_hier_name, " Hierarchies name list
     lt_attr_list TYPE uja_t_attr, " Attributes Infos
     ls_attr_list TYPE uja_s_attr,
     lt_attr_name TYPE uja_t_attr_name, " Attributes name list
@@ -103,7 +103,7 @@ METHOD if_ujr_wb_pre_process~pre_process.
               et_member        = lt_entity_mbr.
           " Re-calculate the keyfigure, divide by N = number of base members
           " Usually it doesn't matter with IF_CALC_DELTA = false,
-          " if the operation is linear mathematical.
+          " if the operation is linear mathematically.
           DESCRIBE TABLE lt_entity_mbr LINES l_num_base.
           " Avoid divide by zero
           IF l_num_base > 0.
